@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'; base-uri 'none'; form-action 'none'">
+<title>Nefro Revisión</title>
+<meta name="description" content="Actualización de revisiones de consultas de nefrología y calculadoras clínicas. Todo se procesa en el navegador.">
+<link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body>
+
+<main id="gate" class="gate">
+  <form id="loginForm" class="card gate-card" autocomplete="off">
+    <p class="brand">NEFRO<span>·</span>REVISIÓN</p>
+    <label>Usuario <input id="user" type="text" required autocomplete="username"></label>
+    <label>Contraseña <input id="pass" type="password" required autocomplete="current-password"></label>
+    <button class="btn primary" type="submit">Entrar</button>
+    <p id="loginErr" class="err" role="alert" hidden>Usuario o contraseña incorrectos.</p>
+  </form>
+</main>
+
+<div id="app" hidden>
+  <header class="top">
+    <p class="brand">NEFRO<span>·</span>REVISIÓN</p>
+    <nav id="nav" class="tabs" aria-label="Secciones">
+      <button class="tab on" data-tab="rev">Revisión</button>
+      <button class="tab" data-tab="risk">Riesgo</button>
+      <button class="tab" data-tab="calc">Calculadoras</button>
+    </nav>
+    <span class="grow"></span>
+    <button id="wipe" class="btn ghost" title="Vacía todos los campos">Borrar todo</button>
+    <button id="logout" class="btn ghost">Salir</button>
+  </header>
+
+  <main class="wrap">
+    <section id="tab-rev">
+      <div class="card">
+        <div class="row">
+          <label>Consulta
+            <select id="type"></select>
+          </label>
+          <label>Edad <input id="age" type="number" min="0" max="120" inputmode="numeric"></label>
+          <label>Sexo <select id="sex"><option value="">auto</option><option value="m">Varón</option><option value="f">Mujer</option></select></label>
+          <label>Peso (kg) <input id="kg" type="number" step="any" inputmode="decimal"></label>
+          <label>Talla (cm) <input id="cm" type="number" step="any" inputmode="decimal"></label>
+          <label class="chk"><input id="dm" type="checkbox"> Diabetes</label>
+        </div>
+        <details id="sessBox" class="mt">
+          <summary>Sesión de hemodiálisis (para Kt/V, opcional)</summary>
+          <div class="row">
+            <label>Duración (min) <input id="s_t" type="number" inputmode="numeric"></label>
+            <label>UF (L) <input id="s_uf" type="number" step="any" inputmode="decimal"></label>
+            <label>Peso post (kg) <input id="s_w" type="number" step="any" inputmode="decimal"></label>
+            <label>Sesiones/semana <input id="s_n" type="number" inputmode="numeric"></label>
+            <label>Acceso <select id="s_acc"><option value="fav">FAV/injerto</option><option value="cvc">Catéter</option></select></label>
+          </div>
+        </details>
+      </div>
+
+      <div class="grid3">
+        <label class="card">1. Revisión previa
+          <textarea id="prev" rows="14" spellcheck="false" placeholder="Pega aquí la revisión anterior completa…"></textarea>
+        </label>
+        <label class="card">2. Analítica actual y evolución (CrS, FGe, uPCR/uACR…)
+          <textarea id="lab" rows="14" spellcheck="false" placeholder="Pega la analítica (línea con fecha) y/o las rejillas de evolución…"></textarea>
+        </label>
+        <label class="card">3. Tratamiento actual
+          <textarea id="meds" rows="14" spellcheck="false" placeholder="Un fármaco por línea o separados por «;»…"></textarea>
+        </label>
+      </div>
+      <p><button id="go" class="btn primary">Generar</button> <span id="msgs" class="muted" role="status"></span></p>
+
+      <div id="out" class="card" hidden>
+        <nav id="outTabs" class="tabs sub" aria-label="Resultados">
+          <button class="tab on" data-out="doc">Revisión actualizada</button>
+          <button class="tab" data-out="ord">Analítica ordenada</button>
+          <button class="tab" data-out="med">Medicación propuesta</button>
+          <button class="tab" data-out="plan">Plan sugerido</button>
+          <button class="tab" data-out="evo">Evolución</button>
+        </nav>
+        <div class="actions">
+          <button id="copyRich" class="btn">Copiar con formato (rojo + negrita)</button>
+          <button id="copyPlain" class="btn">Copiar texto plano</button>
+        </div>
+        <div id="outBody" class="doc" tabindex="0"></div>
+        <p class="muted small">Las sugerencias en <span class="sug">rojo</span> son propuestas generadas por reglas fijas y deben ser validadas por el clínico. Texto plano: las sugerencias van entre [[ ]].</p>
+      </div>
+    </section>
+
+    <section id="tab-risk" hidden>
+      <p class="muted">Los campos se rellenan solos desde la última revisión generada; puedes corregirlos.</p>
+      <div id="riskBox"></div>
+    </section>
+
+    <section id="tab-calc" hidden>
+      <nav id="calcTabs" class="tabs sub" aria-label="Grupos de calculadoras"></nav>
+      <div id="calcBox"></div>
+    </section>
+
+    <footer class="muted small foot">Herramienta de apoyo a la decisión clínica; no sustituye el juicio del médico. Todo se procesa en este navegador: no se envía ni se guarda ningún dato. Sin datos de pacientes en el repositorio.</footer>
+  </main>
+</div>
+
+<script type="module" src="assets/js/app.js"></script>
+</body>
+</html>

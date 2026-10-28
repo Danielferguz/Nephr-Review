@@ -1,0 +1,4 @@
+node_modules/
+# analíticas y revisiones reales: nunca al repo
+privado/
+*.privado.*
