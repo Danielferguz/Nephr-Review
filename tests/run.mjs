@@ -190,30 +190,48 @@ t('buildReview: marcas sin diccionario se avisan', () => {
 // ---- Plantilla HCIS («Analíticamente:») con datos sintéticos
 const TPL_LAB = '03/11/2026 08:00:00: San-Hemoglobina *10.6 g/dL (12 - 14.7), Srm/Pla-Creatinina *2.60 mg/dL, Filtrado glomerular (CKD-EPI) *24 mL/min/1.73m2, Srm/Pla-Urea *90 mg/dL, Srm/Pla-Urato 6.1 mg/dL (2.3 - 6.6), Srm/Pla-Sodio 139 mmol/L, Srm/Pla-Potasio 4.0 mmol/L, Srm/Pla-Magnesio 2.1 mg/dL (1.6 - 2.6), Colesterol LDL calculado (Friedewald) 85 mg/dL, Srm/Pla-Calcio total 9.4 mg/dL, Calcio ajustado por albúmina 9.3 mg/dL, Srm/Pla-Fosfato 3.8 mg/dL, Srm-Paratohormona (PTH) intacta 60.0 (18.5 - 88), Srm-Vitamina D (calcidiol) 38 ng/mL, Srm/Pla-Albúmina 4.4 g/dL, Srm/Pla-Aspartato aminotransferasa (AST) 20 UI/L ( - 40), Srm/Pla-Alanina aminotransferasa (ALT) 18 ( - 35), Srm/Pla-Proteína C reactiva 2.0 mg/L ( - 5), Srm-Hierro 70 µg/dL, Srm/Pla-Ferritina 200 ng/mL, Srm-Índice de saturación de la transferrina 22 %, Uri(mic)-Proteína/creatinina (mg/g) *310.0 mg/g crea, Uri(mic)-Leucocitos Negativo, Uri(mic)-Nitritos Negativo, Uri(mic)-Eritrocitos Negativo';
 const TPL_PREV = 'PRIMERA CONSULTA ERCA\n\nMujer de 80 años con ERC y vasculitis ANCA.\n\nNo se ha realizado analítica desde mayo. Hacemos gasometría en consulta\n-Funcion renal Cr 2.4 mg/dl\n-Hb 11.6g/dl con aranesp\n\nPruebas complementarias: al día.\n\nTRS: explicado.';
-t('plantilla HCIS: título, «Analíticamente:», frases cualitativas y bloques finales', () => {
+t('plantilla ERCA: esqueleto, situación actual, «Analíticamente:» y fin en «Comentario plan»', () => {
   const r = buildReview({ type: 'erca', prev: TPL_PREV, labText: TPL_LAB, medsText: 'ARANESP 10 mg cada 21 días\nNUSTENDI (bempedoico/ezetrol) 1 comp en cena\nRITUXIMAB 500mg --> según UMPI' });
   const p = toPlain(r.doc);
-  assert.ok(p.startsWith('REVISION ERCA\n'));
-  assert.ok(!p.includes('**') && p.includes('Analíticamente:\n- Función renal con CKD_EPI 24ml/min, con proteinuria 0.3gr/gr [[valoro IECA/ARA-II a dosis baja'));
+  assert.ok(p.startsWith('Revisión ERCA:\nResumen clínico:\nMujer de 80 años con ERC y vasculitis ANCA.\n\nSituación actual: Clínicamente estable. Sin ingresos desde última revisión.'));
+  assert.ok(p.includes('Animo estable manteniendo autonomía.\n-TA en domicilio con cifras aprox. 130/80mmHg con datos en consulta:\n\nAnalíticamente:\n- Función renal con CKD_EPI 24ml/min, con proteinuria 0.3gr/gr [[valoro IECA/ARA-II a dosis baja'));
   assert.match(p, /- Buen control iónico \(K 4 \/ Na 139 mmol\/L\)\. \[\[ácido-base sin datos en esta analítica\]\]\n/);
   assert.match(p, /- Metabolismo Ca\/P con buen control y aceptable manejo de vitD\/HiperPTH secundario\n/);
   assert.match(p, /- Límite control de anemia con aceptable control férrico \[\[ajustamos darbepoetina alfa \(aumento ~25 %\)\.\]\]\n/);
   assert.match(p, /- Perfil lipídico con aceptable control\. Transaminasas en rango\n/);
   assert.match(p, /- Ac\. úrico en rango\. Aceptables parámetros nutricionales e inflamatorios\n/);
   assert.match(p, /- DRAS sin datos de ITU\n/);
-  assert.ok(!p.includes('No se ha realizado analítica') && p.includes('Pruebas complementarias: al día.'));
-  assert.match(p, /\nComentario plan\n\[\[- Valoro IECA[^\n]*\n\[\[- Ajustamos darbepoetina alfa/);
-  assert.match(p, /\nMedicación previa:\ndarbepoetina alfa 10 mg cada 21 días\nácido bempedoico\/ezetimiba 1 comp en cena\nrituximab 500mg --> según UMPI\n/);
-  assert.match(p, /\nMedicación actualizada:\n- darbepoetina alfa 10 mg cada 21 días \[\[→ Ajustamos/);
-  assert.ok(!/estatina/.test(p), 'Nustendi cuenta como hipolipemiante: no se propone estatina');
+  assert.ok(!p.includes('No se ha realizado analítica'));
+  // secciones conservadas de la previa y por defecto de la plantilla
+  assert.ok(p.includes('Pruebas complementarias: al día.\nVacunación: Al día [se recomienda vacunación de VHB') && p.includes('Otros especialistas:\n- Cardiología…'));
+  assert.ok(p.includes('TRS: explicado.\n-- Opciones dialíticas:\n-- Tx renal:') && p.includes('INCLUIDO en LERU / PATHI desde ….'));
+  // la revisión termina en «Comentario plan»: la medicación va aparte
+  assert.ok(p.trimEnd().endsWith('[[- Ajustamos darbepoetina alfa (aumento ~25 %) por Hb 10.6 en el límite]]'), p.slice(-200));
+  assert.ok(!/Medicación (previa|actualizada)/.test(p));
+  const m = toPlain(r.medDoc);
+  assert.match(m, /^Medicación previa:\ndarbepoetina alfa 10 mg cada 21 días\nácido bempedoico\/ezetimiba 1 comp en cena\nrituximab 500mg --> según UMPI\n\nMedicación actualizada:\n- darbepoetina alfa 10 mg cada 21 días \[\[→ Ajustamos/);
+  assert.ok(!/estatina/.test(p + m), 'Nustendi cuenta como hipolipemiante: no se propone estatina');
   assert.match(r.warnings.join(' '), /Sustituí desde la línea/);
 });
-t('plantilla HCIS: regenerar sobre la salida anterior no duplica bloques', () => {
+t('plantilla ERCA: bloque opcional de TRS sólo si no hay información ni es conservador', () => {
+  const conTrs = buildReview({ type: 'erca', prev: 'Revisión ERCA:\nTRS: Tx renal de donante vivo en estudio.', labText: TPL_LAB });
+  assert.ok(!toPlain(conTrs.doc).includes('-- Opciones dialíticas:'));
+  const cons = buildReview({ type: 'erca', prev: 'Revisión ERCA:\nTRS: manejo conservador.', labText: TPL_LAB });
+  assert.ok(!toPlain(cons.doc).includes('INCLUIDO en LERU'));
+});
+t('plantilla ERCA: regenerar sobre la salida anterior no duplica bloques ni avisa', () => {
   const r1 = buildReview({ type: 'erca', prev: TPL_PREV, labText: TPL_LAB, medsText: 'ARANESP 10 mg cada 21 días' });
   const r2 = buildReview({ type: 'erca', prev: toPlain(r1.doc), labText: TPL_LAB, medsText: 'ARANESP 10 mg cada 21 días' });
   const p = toPlain(r2.doc);
-  for (const h of ['Analíticamente:', 'Comentario plan', 'Medicación previa:', 'Medicación actualizada:']) assert.equal(p.split(h).length - 1, 1, h);
+  for (const h of ['Revisión ERCA:', 'Resumen clínico:', 'Situación actual:', 'Analíticamente:', 'Comentario plan', '-- Opciones dialíticas:']) assert.equal(p.split(h).length - 1, 1, h);
   assert.deepEqual(r2.warnings, []);
+});
+t('analítica ordenada: valores anormales en negrita (HTML) y sin marcas en texto plano', () => {
+  const r = buildReview({ type: 'erca', prev: '', labText: TPL_LAB });
+  const html = toHtml(r.orderedDoc, true);
+  assert.ok(html.includes('<b>Hb 10.6 g/dL</b>') && html.includes('<b>Creatinina 2.6 mg/dL</b>') && html.includes('<b>Filtrado 24 mL/min</b>'));
+  assert.ok(!html.includes('<b>Na+ 139') && !html.includes('<b>K+ 4 mmol'));
+  assert.ok(!/\*|\[\[/.test(toPlain(r.orderedDoc)));
 });
 
 // ---- Gráfica, anonimizador e IA

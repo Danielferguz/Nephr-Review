@@ -83,7 +83,7 @@ const textHtml = t => esc(t).replace(/\n/g, '<br>');
 function current() {
   if (!last?.cur?.date) return null;
   const r = last;
-  if (view === 'ord') return { shown: textHtml(r.ordered), html: textHtml(r.ordered), plain: r.ordered };
+  if (view === 'ord') return { shown: toHtml(r.orderedDoc, false), html: `<div>${toHtml(r.orderedDoc, true)}</div>`, plain: toPlain(r.orderedDoc) }; // negrita = valor fuera de rango
   if (view === 'evo') {
     const txt = r.evo.rows.map(x => `${x[0]}: ${x[1]}`).join('\n');
     const charts = r.evo.charts.map((c, i) => `<figure class="chart" data-i="${i}">${chartSvg(c.ser, c)}<button class="btn" type="button" data-copy="${i}">Copiar imagen</button></figure>`).join('');

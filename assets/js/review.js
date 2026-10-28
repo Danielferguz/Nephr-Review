@@ -1,6 +1,6 @@
 // Actualización de la revisión: sustituye la sección de analítica con comentario en el estilo del clínico y propone
 // las decisiones (en rojo y negrita) para que las valide. Reglas fijas; nada sale del navegador.
-import { collect, current, series, regress, trendText, fmtDate, formatOrdered, sniffPatient } from './lab.js';
+import { collect, current, series, regress, trendText, fmtDate, formatOrdered, orderedDoc, sniffPatient } from './lab.js';
 import { ckdepi2021, cockcroftGault, spKtV, eKtV, stdKtV, fx } from './calc.js';
 import { parseMeds } from './drugs.js';
 
@@ -350,6 +350,37 @@ const BUL = /^\s*(\\?-|•|\*(?!\*)|--?>|\d+[.)])\s*/;
 const plainLine = l => l.replace(/\*\*/g, '');
 const TITLES = { erca: 'REVISION ERCA', general: 'REVISION NEFROLOGÍA', glom: 'REVISION GLOMERULARES', tx: 'REVISION TRASPLANTE', dp: 'REVISION DIÁLISIS PERITONEAL', hd: 'REVISION HEMODIÁLISIS', hdd: 'REVISION HEMODIÁLISIS DOMICILIARIA', guardia: '' };
 const B = t => ({ t, b: true });
+const NO_BLANKS = a => { let x = [...a]; while (x.length && !x[0].trim()) x.shift(); while (x.length && !x[x.length - 1].trim()) x.pop(); return x; };
+
+// Plantilla «Revisión ERCA» del HCIS (situación actual y bloques que se rellenan a mano)
+const SIT = 'Clínicamente estable. Sin ingresos desde última revisión. No ITUs ni CRUs. No edemas en regiones declives ni datos de sobrecarga de volumen actuales ni agudización de disnea, ortopnea, episodios de DPN ni otros datos de descompensación cardiaca . Diuresis residual mantenida sin síntomas urinarios. Apetito conservado con buena tolerancia sin náuseas, vómitos ni sintomatología GI de novo. No referido prurito, calambres, piernas inquietas ni otra sintomatología urémica referida. Aceptable descanso nocturno. Animo estable manteniendo autonomía.';
+const TA = '-TA en domicilio con cifras aprox. 130/80mmHg con datos en consulta:';
+const DEF = {
+  pru: ['Pruebas complementarias: Al día [ecocardiograma/ecografía abdominal/rx de tórax //  densitometría cada 2 años en >65 años // Al día.]'],
+  vac: ['Vacunación: Al día [se recomienda vacunación de VHB según pauta que se asocia en documento adjunto.  Recomendamos vacunación al día desde MAP de Neumococo / Gripe / Covid-19]'],
+  otr: ['Otros especialistas:', '- Cardiología…'],
+  trs: ['TRS: Explicamos motivo de transferencia a esta consulta, así como potencial progresión ERCA y requerimiento de TRS, con todas las opciones disponibles.'],
+};
+// Sólo si no hay información de TRS en la revisión previa y no es conservador
+const TRS_OPCIONAL = ['-- Opciones dialíticas:', '-- Tx renal:', '- Opción de tx de donante VIVO', '- Grupo sanguíneo ', '- Tipaje HLA y AC específicos', '- Pruebas complementarias dirigidas: Ecocardiograma / ecografía abdominal / rx de torax',
+  '-- Valoración desde UROLOGIA (si FG <13-14ml/min o previsión de inclusión en diálisis < 1año)', 'Realizar TAC sin contraste en ERCA si es posible.', '--- Valoración desde GINECOLOGIA / CARDIOLOGÍA /NEUMOLOGÍA según precise',
+  '--- Derivación a Medicina PREVENTIVA con solicitud de serología para VHC, VHA, VHB y serología post-vacunación, VIH, varicela, rubeola, sarampión, parotiditis, CMV, EB, sífilis, toxoplasmosis', 'INCLUIDO en LERU / PATHI desde ….'];
+const KINDS = [['res', /^\s*(\*\*)?resumen( cl[ií]nico| de historia nefrol[oó]gica)?\s*:/i], ['sit', /^\s*(\*\*)?situaci[oó]n actual\s*:/i], ['pru', /^\s*(\*\*)?(pruebas complementarias|pc)\s*:/i],
+  ['vac', /^\s*(\*\*)?vacunaci[oó]n\s*:/i], ['otr', /^\s*(\*\*)?otros especialistas\b/i], ['trs', /^\s*(\*\*)?(trs|tx renal|trasplante renal)\s*:/i]];
+const CLINICAL = /^\s*(\*\*)?\s*(acude|cl[ií]nicamente|-->|refiere|niega|se ha encontrado|buen estado general|ta\b|peso\b)/i;
+
+// Reparte la revisión previa en secciones conocidas; lo que no encaja se conserva en `after`.
+function splitPrev(lines, h) {
+  const kinds = lines.map((l, i) => (i === h ? 'an' : HEAD.test(plainLine(l)) ? 'an' : (KINDS.find(([, re]) => re.test(plainLine(l))) || [])[0] || null));
+  const secs = { pre: [], res: [], sit: [], an: [], pru: [], vac: [], otr: [], trs: [], after: [] };
+  let cur = 'pre';
+  lines.forEach((l, i) => {
+    if (kinds[i]) { cur = kinds[i]; secs[cur].push(l); return; }
+    if (cur === 'an' && l.trim() && !BUL.test(plainLine(l))) cur = 'after';
+    secs[cur].push(l);
+  });
+  return secs;
+}
 
 export function buildReview(inp) {
   const { type, prev = '', medsText = '', bullet: bch = '- ', style = 'tpl' } = inp;
@@ -367,10 +398,8 @@ export function buildReview(inp) {
 
   let lines = prev ? prev.split(/\r?\n/) : [];
   const cut = lines.findIndex(l => TAIL_HEAD.test(plainLine(l)));
-  if (cut >= 0) lines = lines.slice(0, cut); // plan y medicación de la revisión anterior: se regeneran abajo
-  while (lines.length && !lines[lines.length - 1].trim()) lines.pop();
-  if (TITLES[type] && lines.length && lines[0].trim().length < 60 && /^\s*(\*\*)?\s*primera consulta\b/i.test(lines[0])) lines[0] = /^\s*\*\*/.test(lines[0]) ? `**${TITLES[type]}**` : TITLES[type];
-
+  if (cut >= 0) lines = lines.slice(0, cut); // plan y medicación de la revisión anterior: se regeneran
+  lines = NO_BLANKS(lines);
   let h = lines.findIndex(l => HEAD.test(plainLine(l)));
   if (h < 0) {
     h = lines.findIndex((l, i) => /anal[ií]tica/i.test(plainLine(l)) && BUL.test(plainLine(lines[i + 1] || '')));
@@ -378,30 +407,46 @@ export function buildReview(inp) {
   }
   const hdr = style === 'tpl' ? B('Analíticamente:') : { t: `Analítica (${fmtDate(cur.date)}):`, b: h >= 0 && /\*\*/.test(lines[h]) };
   const section = [[hdr], ...(style === 'tpl' ? [] : [[]]), ...(style === 'tpl' ? res.tbullets : res.bullets).map(b => [T(bch), ...b])];
+
   let doc;
-  if (h < 0) {
-    if (prev) warnings.push('No encontré una sección «Analítica/Análisis» en la revisión previa: la añado al final.');
-    doc = [...(!prev && TITLES[type] ? [[B(TITLES[type])], []] : []), ...lines.map(parseInline), ...(lines.length ? [[]] : []), ...section];
+  if (style === 'tpl' && type === 'erca') {
+    // Esqueleto de la plantilla «Revisión ERCA»: se conservan resumen, pruebas, vacunación, especialistas y TRS de la revisión previa
+    const sc = splitPrev(lines, h);
+    const pre = NO_BLANKS(sc.pre);
+    const body = pre.length && /consulta|revisi[oó]n/i.test(pre[0]) && pre[0].trim().length < 60 ? pre.slice(1) : pre;
+    const ci = body.findIndex(l => CLINICAL.test(l));
+    const summary = NO_BLANKS(sc.res.length ? sc.res.slice(1) : ci >= 0 ? body.slice(0, ci) : body);
+    if (ci >= 0 || (sc.sit.length && !sc.sit.join('\n').includes(SIT.slice(0, 40)))) warnings.push('Sustituí la situación clínica de la revisión previa por la plantilla de situación actual: rellena TA y exploración.');
+    const keep = (k, d) => NO_BLANKS(sc[k]).length ? NO_BLANKS(sc[k]) : d;
+    const prevAll = lines.join('\n');
+    const optional = !/opciones dial[ií]ticas|tx renal|LERU|PATHI|donante vivo|conservador/i.test(prevAll);
+    doc = [[B('Revisión ERCA:')], [B('Resumen clínico:')], ...summary.map(parseInline), [],
+      [B('Situación actual:'), T(` ${SIT}`)], [T(TA)], [], ...section, [],
+      ...keep('pru', DEF.pru).map(parseInline), ...keep('vac', DEF.vac).map(parseInline), ...keep('otr', DEF.otr).map(parseInline), [],
+      ...keep('trs', DEF.trs).map(parseInline), ...(optional ? TRS_OPCIONAL.map(l => [T(l)]) : []),
+      ...(NO_BLANKS(sc.after).length ? [[], ...NO_BLANKS(sc.after).map(parseInline)] : [])];
   } else {
-    let e = h + 1;
-    const nextNonBlank = i => lines.slice(i + 1).find(l => l.trim());
-    while (e < lines.length && (BUL.test(plainLine(lines[e])) || (!lines[e].trim() && nextNonBlank(e) && BUL.test(plainLine(nextNonBlank(e)))))) e++;
-    doc = [...lines.slice(0, h).map(parseInline), ...section, ...lines.slice(e).map(parseInline)];
+    if (TITLES[type] && lines.length && lines[0].trim().length < 60 && /^\s*(\*\*)?\s*primera consulta\b/i.test(lines[0])) lines[0] = /^\s*\*\*/.test(lines[0]) ? `**${TITLES[type]}**` : TITLES[type];
+    if (h < 0) {
+      if (prev) warnings.push('No encontré una sección «Analítica/Análisis» en la revisión previa: la añado al final.');
+      doc = [...(!prev && TITLES[type] ? [[B(TITLES[type])], []] : []), ...lines.map(parseInline), ...(lines.length ? [[]] : []), ...section];
+    } else {
+      let e = h + 1;
+      const nextNonBlank = i => lines.slice(i + 1).find(l => l.trim());
+      while (e < lines.length && (BUL.test(plainLine(lines[e])) || (!lines[e].trim() && nextNonBlank(e) && BUL.test(plainLine(nextNonBlank(e)))))) e++;
+      doc = [...lines.slice(0, h).map(parseInline), ...section, ...lines.slice(e).map(parseInline)];
+    }
   }
-  const medDoc = meds.map(m => [T(m.label), ...(m.notes.length ? [S(` → ${m.notes.join('; ')}`)] : [])]);
-  res.adds.forEach(a => medDoc.push([S(`+ ${a}`)]));
   const planDoc = res.plan.map(p => [S(`- ${p}`)]);
-  // bloques finales de la plantilla: comentario del plan y medicación previa/actualizada
+  // La revisión termina en «Comentario plan»; la medicación va en su propia pestaña
   doc.push([], [B('Comentario plan')], ...(res.plan.length ? planDoc : [[T('[aquí añadir cambios de forma resumida]')]]));
-  if (meds.length) {
-    doc.push([], [B('Medicación previa:')], ...meds.map(m => [T(m.label)]), [], [B('Medicación actualizada:')],
-      ...meds.map(m => [T(`- ${m.label}`), ...(m.notes.length ? [S(` → ${m.notes.join('; ')}`)] : [])]), ...res.adds.map(a => [S(`- Añadir: ${a}`)]));
-  }
+  const medDoc = meds.length ? [[B('Medicación previa:')], ...meds.map(m => [T(m.label)]), [], [B('Medicación actualizada:')],
+    ...meds.map(m => [T(`- ${m.label}`), ...(m.notes.length ? [S(` → ${m.notes.join('; ')}`)] : [])]), ...res.adds.map(a => [S(`- Añadir: ${a}`)])] : res.adds.map(a => [S(`- Añadir: ${a}`)]);
   const evo = evolution(cur.all, { age, female });
-  return { cur, date: cur.date, doc, section, medDoc, planDoc, evo, ordered: formatOrdered(cur, { extras: inp.extras }), warnings, patient: { age, female, kg, cm }, res };
+  return { cur, date: cur.date, doc, section, medDoc, planDoc, evo, ordered: formatOrdered(cur, { extras: inp.extras }), orderedDoc: orderedDoc(cur, { extras: inp.extras }), warnings, patient: { age, female, kg, cm }, res };
 }
 
 // ---- Render
 const esc = x => x.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 export const toPlain = (doc, mark = true) => doc.map(l => l.reduce((acc, g) => acc + (g.s && mark ? `${!acc || /\s$/.test(acc) ? '' : ' '}[[${g.t.trim()}]]` : g.t), '')).join('\n');
-export const toHtml = (doc, rich = false) => doc.map(l => l.map(g => (g.s ? (rich ? `<b style="color:#C00000">${esc(g.t)}</b>` : `<span class="sug">${esc(g.t)}</span>`) : g.b ? `<b>${esc(g.t)}</b>` : esc(g.t))).join('')).join('<br>');
+export const toHtml = (doc, rich = false) => doc.map(l => l.map(g => (g.s ? (rich ? `<b style="color:#C00000">${esc(g.t)}</b>` : `<span class="sug">${esc(g.t)}</span>`) : g.b ? `<b>${esc(g.t)}</b>` : esc(g.t))).join('').replace(/^( +)/, m => '&nbsp;'.repeat(m.length))).join('<br>');

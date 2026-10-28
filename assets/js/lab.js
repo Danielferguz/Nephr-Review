@@ -192,33 +192,41 @@ const cell = (r, o = {}) => {
   const v = o.mul ? r.num * o.mul : r.num;
   return o.fmt ? o.fmt(v) : o.dec != null ? String(+v.toFixed(o.dec)) : /^[<>]/.test(r.valueStr) ? r.valueStr : String(parseFloat(r.valueStr));
 };
-const item = (vals, [k, label, unit, o = {}]) => { const c = cell(vals.get(k), o); return c == null ? null : `${label} ${c}${unit ? (o.tight ? '' : ' ') + unit : ''}`; };
-const wbcLine = vals => {
+const item = (vals, [k, label, unit, o = {}]) => { const c = cell(vals.get(k), o); return c == null ? null : { t: `${label} ${c}${unit ? (o.tight ? '' : ' ') + unit : ''}`, f: !!vals.get(k).flag }; };
+const wbcItems = vals => {
   const w = vals.get('wbc'); if (!w) return null;
-  const ab = k => (vals.get(k) ? Math.round(vals.get(k).num * 1000) : null);
+  const ab = k => (vals.get(k) ? Math.round(vals.get(k).num * 1000) : null), fl = k => !!vals.get(k)?.flag;
   const [n, l, m, e, b] = ['neu', 'lin', 'mon', 'eos', 'bas'].map(ab);
-  const diff = [n != null && `N ${n}`, l != null && `L ${l}`, m != null && `M ${m}`, e != null && `E ${e}`, b != null && `B ${b}`, n != null && l ? `N/L ${(n / l).toFixed(2)}` : false].filter(Boolean);
-  return `Leucocitos ${thousands(w.num * 1000)}/µL${diff.length ? ` [${diff.join(', ')}]` : ''}`;
+  const diff = [n != null && { t: `N ${n}`, f: fl('neu') }, l != null && { t: `L ${l}`, f: fl('lin') }, m != null && { t: `M ${m}`, f: fl('mon') }, e != null && { t: `E ${e}`, f: fl('eos') }, b != null && { t: `B ${b}`, f: fl('bas') }, n != null && l ? { t: `N/L ${(n / l).toFixed(2)}`, f: false } : false].filter(Boolean);
+  return [{ t: `Leucocitos ${thousands(w.num * 1000)}/µL`, f: !!w.flag }, ...(diff.length ? [{ t: ' [' }, ...diff.flatMap((d, i) => (i ? [{ t: ', ' }, d] : [d])), { t: ']' }] : [])];
 };
+const segs = items => items.flatMap((it, i) => (i ? [{ t: ', ' }, it] : [it])).map(it => (it.f ? { t: it.t, b: true } : { t: it.t }));
 
-export function formatOrdered(cur, { extras = false } = {}) {
-  const lines = [`Analítica ${fmtDate(cur.date)}`], used = new Set();
+// Líneas de segmentos {t, b}: los valores fuera de rango del laboratorio (o en negrita en el HCE) salen en negrita.
+export function orderedDoc(cur, { extras = false } = {}) {
+  const lines = [[{ t: `Analítica ${fmtDate(cur.date)}` }]], used = new Set();
   for (const [title, rows] of MAIN) {
-    const out = rows.map(row => (row === 'WBC' ? (['wbc', 'neu', 'lin', 'mon', 'eos', 'bas'].forEach(k => used.add(k)), wbcLine(cur.vals)) : (row.forEach(([k]) => used.add(k)), row.map(it => item(cur.vals, it)).filter(Boolean).join(', ')))).filter(Boolean);
-    out.forEach((txt, i) => lines.push(i === 0 ? `- ${title}: ${txt}` : `    ${txt}`));
+    const out = rows.map(row => {
+      if (row === 'WBC') { ['wbc', 'neu', 'lin', 'mon', 'eos', 'bas'].forEach(k => used.add(k)); const w = wbcItems(cur.vals); return w && w.map(g => (g.f ? { t: g.t, b: true } : { t: g.t })); }
+      row.forEach(([k]) => used.add(k));
+      const its = row.map(it => item(cur.vals, it)).filter(Boolean);
+      return its.length ? segs(its) : null;
+    }).filter(Boolean);
+    out.forEach((sg, i) => lines.push(i === 0 ? [{ t: `- ${title}: ` }, ...sg] : [{ t: '    ' }, ...sg]));
   }
   const u = URINE.map(([k, label, unit]) => { used.add(k); return item(cur.vals, [k, label, unit]); }).filter(Boolean);
   if (u.length) {
     const rec = cur.vals.get('u_cr') || cur.vals.get('u_pcr') || cur.vals.get('u_acr') || cur.vals.get('u_dens');
-    lines.push('', `Orina ${fmtDate(rec?.date || cur.date)}${rec?.time ? `, ${rec.time.slice(0, 5)}` : ''}: ${u.join(', ')}`);
+    lines.push([], [{ t: `Orina ${fmtDate(rec?.date || cur.date)}${rec?.time ? `, ${rec.time.slice(0, 5)}` : ''}: ` }, ...segs(u)]);
   }
   if (extras) {
-    const rest = [...cur.vals].filter(([k]) => !used.has(k)).map(([k, r]) => `${BY_KEY[k].label} ${cell(r)}${BY_KEY[k].unit ? ' ' + BY_KEY[k].unit : ''}`)
-      .concat(cur.others.map(r => `${r.name.replace(/^[A-Za-z/()0-9]+-/, '')} ${r.valueStr}${r.unit ? ' ' + r.unit : ''}`));
-    if (rest.length) lines.push('', `Otros: ${rest.join(', ')}`);
+    const rest = [...cur.vals].filter(([k]) => !used.has(k)).map(([k, r]) => ({ t: `${BY_KEY[k].label} ${cell(r)}${BY_KEY[k].unit ? ' ' + BY_KEY[k].unit : ''}`, f: !!r.flag }))
+      .concat(cur.others.map(r => ({ t: `${r.name.replace(/^[A-Za-z/()0-9]+-/, '')} ${r.valueStr}${r.unit ? ' ' + r.unit : ''}`, f: !!r.flag })));
+    if (rest.length) lines.push([], [{ t: 'Otros: ' }, ...segs(rest)]);
   }
-  return lines.join('\n');
+  return lines;
 }
+export const formatOrdered = (cur, o) => orderedDoc(cur, o).map(l => l.map(g => g.t).join('')).join('\n');
 
 // Extrae edad/sexo/peso/talla de texto libre (revisión previa o cabecera de pruebas).
 export function sniffPatient(text) {
