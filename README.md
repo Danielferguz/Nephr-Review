@@ -9,6 +9,9 @@ Página estática (HTML + CSS + JS sin build ni dependencias) para actualizar re
   - la revisión con la sección *Analítica (fecha)* sustituida y comentada en tu estilo, con las **decisiones propuestas en rojo y negrita**; el resto queda igual;
   - *Analítica ordenada* por grupos, *Medicación propuesta* (principio activo en lugar de marca, pauta expandida por toma —«2 g en comida y 2 g en cena»—, dosis diaria en los comentarios y fecha de inicio de los fármacos que alteran el FGe o la CrS), *Plan sugerido* y *Evolución y gráficas* (SVG con tendencia, copiables como imagen);
   - copiar con formato (rojo + negrita) o en texto plano (propuestas entre `[[ ]]`).
+- **Estilo del comentario**: *Plantilla HCIS* («Analíticamente:» con las frases de la plantilla: «Buen control iónico (K 4 / Na 138 mmol/L)…», cada alteración con su decisión en rojo) o *Detallado con valores* («Analítica (fecha):»). Se añaden «Comentario plan», «Medicación previa» y «Medicación actualizada». Si la revisión previa ya los trae, se regeneran sin duplicar.
+- **Analítica ordenada** en el formato del HCIS (hemograma con diferencial y N/L, iones, bioquímica por líneas, orina con hora), con opción de incluir el resto de parámetros.
+- **Recomendaciones generales y citas** (ERCA o diálisis domiciliaria según la consulta, con fechas y hora) y pestaña **Plantillas** con el resto de la biblioteca del HCIS (derivación a HD, catéter peritoneal, embolizaciones…), generadas a partir del Word compartido (`assets/js/templates.js`).
 - **Detección automática**: lo pegado se analiza en vivo y rellena los campos de las calculadoras y de KFRE/Mayo/SCORE2 (edad y sexo incluidos).
 - **Riesgo**: KFRE (4/8 variables, 2 y 5 años), ADPKD (clase de Mayo y proyección de FGe) y SCORE2/SCORE2-OP con estatinas (KDIGO + objetivos ESC).
 - **Calculadoras**: hematología, hemodiálisis/DP, nefroclínica (incluye Furst) y bioquímica/electrolitos/ácido-base.

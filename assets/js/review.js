@@ -32,7 +32,8 @@ export function parseInline(line) {
 // ---- Motor de reglas
 export function analyze(ctx) {
   const { cur, all, type, meds, age, female, kg } = ctx, dial = DIAL.has(type);
-  const rec = k => cur.vals.get(k), v = k => rec(k)?.num ?? NaN, s = k => rec(k)?.valueStr ?? '—';
+  const rec = k => cur.vals.get(k), v = k => rec(k)?.num ?? NaN;
+  const s = k => { const r = rec(k); return !r ? '—' : Number.isFinite(r.num) && !/^[<>]/.test(r.valueStr) ? String(parseFloat(r.valueStr)) : r.valueStr; }; // 4.0 -> 4
   const has = c => meds.some(m => m.classes.includes(c)), med = c => meds.find(m => m.classes.includes(c));
   const nameOf = (c, d) => med(c)?.inn || d;
   const prevRec = k => { const l = rec(k); const p = series(all, k).filter(x => !l || x.date < l.date); return p.length ? p[p.length - 1] : null; };
@@ -43,8 +44,11 @@ export function analyze(ctx) {
 
   const plan = [], adds = [], bullets = [];
   let D = []; // decisiones de la frase en curso
+  let DD = []; const dom = {}; // decisiones por dominio (para el estilo plantilla)
+  const endDom = k => { dom[k] = DD; DD = []; };
+  const renalNote = []; let doseBullet = null, capFacts = '', ironState = null, hemoTxt = '';
   const dec = (t, o = {}) => {
-    D.push(t);
+    D.push(t); DD.push(t);
     const full = cap(t) + (o.why ? ` por ${o.why}` : '');
     if (!plan.includes(full)) plan.push(full);
     if (o.cls) meds.filter(m => m.classes.includes(o.cls)).forEach(m => !m.notes.includes(full) && m.notes.push(full));
@@ -76,15 +80,17 @@ export function analyze(ctx) {
     // fármacos que modifican la CrS o el FGe: fecha de inicio entre las dos últimas determinaciones
     const cp = prevRec('cr');
     if (cp && (v('cr') - cp.value >= 0.3 || v('cr') / cp.value >= 1.15)) {
-      meds.filter(m => (m.hemo || m.secr) && m.start && m.start >= cp.date && m.start <= cur.date).forEach(m =>
-        out.push([S(`Inicio de ${m.inn} el ${fmtDate(m.start)}: ${m.secr ? 'inhibe la secreción tubular de creatinina, posible aumento de CrS sin descenso real del FG' : 'posible descenso hemodinámico del FGe'}.`)]));
+      meds.filter(m => (m.hemo || m.secr) && m.start && m.start >= cp.date && m.start <= cur.date).forEach(m => {
+        const note = [S(`Inicio de ${m.inn} el ${fmtDate(m.start)}: ${m.secr ? 'inhibe la secreción tubular de creatinina, posible aumento de CrS sin descenso real del FG' : 'posible descenso hemodinámico del FGe'}.`)];
+        out.push(note); renalNote.push(...note);
+      });
     }
     if (num(acr) || num(pcr)) {
       const pa = prevRec('u_acr'), pp = prevRec('u_pcr') || prevRec('u24_pcr'), now = num(acr) ? acr : pcr, pv = num(acr) ? pa : pp;
       const tr = pv ? (now >= 1.3 * pv.value ? ' en ascenso' : now <= 0.7 * pv.value ? ' en descenso' : ' estable') : '';
       const hem = rec('u_hem') ? (/^neg/i.test(rec('u_hem').valueStr) || rec('u_hem').num === 0 ? ', sin hematuria' : ', con hematuria') : '';
       if (pv && now >= 2 * pv.value && now >= 30) dec('repito uPCR/uACR en muestra de primera hora con sedimento para confirmar');
-      if (prot && !has('raas') && !(K > 5) && !dial) dec('inicio IECA/ARA-II a dosis máxima tolerada con control de K y creatinina', { add: 'raas', why: 'proteinuria sin bloqueo del SRAA' });
+      if (prot && !has('raas') && !(K > 5) && !dial) dec(num(fg) && fg < 30 ? 'valoro IECA/ARA-II a dosis baja con control de K y creatinina' : 'inicio IECA/ARA-II a dosis máxima tolerada con control de K y creatinina', { add: 'raas', why: 'proteinuria sin bloqueo del SRAA' });
       if (prot && num(fg) && fg >= 20 && !has('sglt2') && (ctx.dm || (num(acr) && acr >= 200) || (num(pcr) && pcr >= 500))) dec('valoro iSGLT2', { add: 'sglt2', why: 'FGe ≥20 y albuminuria' });
       if (ctx.dm && num(acr) && acr >= 30 && num(fg) && fg >= 25 && K <= 5 && !has('arm')) dec('valoro finerenona', { add: 'arm', why: 'DM2 con albuminuria persistente (K ≤5,0)' });
       out.push(sent(`Proteinuria${tr}, ${[num(pcr) && `uPCR ${f0(pcr)}`, num(acr) && `uACR ${f0(acr)}`].filter(Boolean).join(' y ')} mg/g${(pa || pp) ? ` frente a ${[pp && f0(pp.value), pa && f0(pa.value)].filter(Boolean).join('/')} mg/g en ${when((pa || pp).date)}` : ''}${hem}`));
@@ -104,6 +110,8 @@ export function analyze(ctx) {
     } else if (type === 'dp') txt += '; dosis según cinética peritoneal con orina de 24 h';
     bullet(sent(`${txt}. No calculo FGe por estar en TRS`));
   }
+
+  doseBullet = bullets[bullets.length - 1]; endDom('renal');
 
   // 2. Iones y ácido-base
   {
@@ -132,6 +140,8 @@ export function analyze(ctx) {
     bullet(...sents);
   }
 
+  endDom('ion');
+
   // 3. Metabolismo Ca/P
   if ([ca, caCorr, v('p'), v('pth'), v('vitd'), v('caion')].some(num)) {
     const P = v('p'), pth = v('pth'), vd = v('vitd'), pp = prevRec('pth');
@@ -153,18 +163,23 @@ export function analyze(ctx) {
     else if (vd < 30 && !dial) dec(has('vitd') ? `aumento ${nameOf('vitd')}` : 'valoro suplemento de vitamina D', { cls: 'vitd', add: 'vitd', why: `insuficiencia de vitamina D (${s('vitd')})` });
     const first = `${num(v('caadj')) || (num(ca) && num(alb)) ? `Ca ajustado ${num(v('caadj')) ? s('caadj') : fx(caCorr, 1)}` : `Ca ${s('ca')}`}${num(v('caion')) ? ` con Ca2+ ${s('caion')}` : ''}`;
     const rest = [num(P) && `P ${s('p')}`, num(vd) && `VD ${s('vitd')}`, num(pth) && `PTH ${s('pth')}${trend ? `,${trend}` : ''}${calcim && pthHigh ? ` pese a ${calcim.inn}${calcim.start ? ` (desde ${fmtDate(calcim.start)})` : ''}` : ''}`].filter(Boolean);
-    bullet(sent(`Metabolismo Ca/P: ${join([first, ...rest])}`));
+    capFacts = join([first, ...rest]);
+    bullet(sent(`Metabolismo Ca/P: ${capFacts}`));
   }
+
+  endDom('cap');
 
   // 4. Anemia
   if ([v('hb'), v('ferr'), v('tsat'), v('vcm')].some(num)) {
     const hb = v('hb'), ferr = v('ferr'), tsat = v('tsat'), esa = med('esa');
     const ironLow = dial ? (num(tsat) && tsat < 20) || (num(ferr) && ferr < 200) : num(tsat) && tsat <= 20 && num(ferr) && ferr <= 100;
     const ironHigh = (num(ferr) && ferr > (dial ? 800 : 500)) || (num(tsat) && tsat > 45);
+    ironState = num(ferr) || num(tsat) ? (ironLow ? 'low' : ironHigh ? 'high' : 'ok') : null;
     let txt = `Anemia: Hb ${s('hb')}`;
     if (esa) {
       if (hb > (dial ? 12 : 11.5)) dec(`reduzco ${esa.inn} ~25 %`, { cls: 'esa', why: `Hb ${s('hb')} por encima de objetivo` });
       else if (hb < 10) dec(`aumento ${esa.inn} ~25 % tras revisar hierro e inflamación`, { cls: 'esa', why: `Hb ${s('hb')}` });
+      else if (!dial && hb < 11) dec(`ajustamos ${esa.inn} (aumento ~25 %)`, { cls: 'esa', why: `Hb ${s('hb')} en el límite` });
       else txt += `, en objetivo con ${esa.inn}`;
     } else if (hb >= 10) txt += ', bien controlada sin AEE';
     else if (hb < 10 && !ironLow) dec('valoro iniciar AEE', { add: 'esa', why: `Hb ${s('hb')} con reservas de hierro adecuadas` });
@@ -180,23 +195,27 @@ export function analyze(ctx) {
     bullet(sent(txt));
   }
 
+  endDom('anemia');
+
   // 5. Lípidos y hepático
   {
     const ldl = v('ldl'), sents = [];
     if (num(ldl) || num(v('chol'))) {
-      const on = has('statin');
-      if (num(ldl) && ldl > 70 && on) dec('refuerzo adherencia y dieta, valoro intensificar o añadir ezetimiba', { cls: 'statin', why: `LDL ${s('ldl')} con estatina` });
+      const on = has('statin') || has('lipid');
+      if (num(ldl) && ldl > 100 && on) dec('refuerzo adherencia y dieta, valoro intensificar o añadir ezetimiba', { cls: has('statin') ? 'statin' : 'lipid', why: `LDL ${s('ldl')} con hipolipemiante` });
       if (!on && !dial && age && !(num(ldl) && ldl <= 70)) {
         if (age >= 50) dec('valoro iniciar estatina (o estatina + ezetimiba)', { add: 'statin', why: num(fg) && fg < 60 ? 'edad ≥50 y FGe <60 (KDIGO 1A)' : 'ERC y edad ≥50 (KDIGO 1B)' });
         else if (ctx.dm) dec('valoro estatina', { add: 'statin', why: 'ERC con diabetes (KDIGO 2A)' });
       }
       if (v('tg') > 500) dec('dieta, descarto causas secundarias y valoro fibrato/omega-3', { why: `TG ${s('tg')} (riesgo de pancreatitis)` });
-      sents.push(sent(num(ldl) ? (ldl <= 70 ? `Perfil lipídico bien controlado (LDL ${s('ldl')})` : `Perfil lipídico con LDL ${s('ldl')}`) : `Colesterol total ${s('chol')}`));
+      sents.push(sent(num(ldl) ? (ldl <= 70 ? `Perfil lipídico bien controlado (LDL ${s('ldl')})` : ldl <= 100 ? `Perfil lipídico aceptablemente controlado (LDL ${s('ldl')})` : `Perfil lipídico con LDL ${s('ldl')}`) : `Colesterol total ${s('chol')}`));
     }
     const hep = ['ast', 'alt', 'ggt', 'fa', 'bil'].filter(k => rec(k));
     if (hep.length) sents.push(sent(hep.some(k => rec(k).flag) ? `Perfil hepático: ${hep.filter(k => rec(k).flag).map(k => `${k.toUpperCase()} ${s(k)}`).join(', ')} fuera de rango` : 'Perfil hepático normal'));
     bullet(...sents);
   }
+
+  endDom('lip');
 
   // 6. Urato, nutrición, inflamación, glucemia
   {
@@ -212,6 +231,8 @@ export function analyze(ctx) {
     bullet(...sents);
   }
 
+  endDom('misc');
+
   // 7. Hemograma fuera de rango (no anemia)
   {
     const f = [];
@@ -219,9 +240,67 @@ export function analyze(ctx) {
     if (high('wbc')) f.push(`leucocitosis ${s('wbc')}`); else if (low('wbc')) f.push(`leucopenia ${s('wbc')}`);
     if (high('neu_p') && !high('wbc')) f.push('neutrofilia relativa');
     if (high('plt')) f.push(`trombocitosis ${s('plt')}`); else if (low('plt')) f.push(`trombopenia ${s('plt')}`);
-    if (f.length) bullet(sent(join(f).replace(/ y /, ' con ').replace(/^./, c => c.toUpperCase())));
+    if (f.length) { hemoTxt = join(f).replace(/ y /, ' con ').replace(/^./, c => c.toUpperCase()); bullet(sent(hemoTxt)); }
   }
+  endDom('hemo');
   bullet([T('resto aceptable.')]);
+
+  // ---- Estilo plantilla HCIS («Analíticamente:»): frases cualitativas de la plantilla + decisiones en rojo
+  const tpl = [];
+  const joinSent = sents => sents.reduce((a, x, i) => (i ? [...a, T('. '), ...x] : x), []);
+  const tail = key => (dom[key]?.length ? [T(' '), S(`${dom[key].join(' y ')}.`)] : []);
+  const push = (segs, key) => { if (segs.length) tpl.push([...segs, ...tail(key)]); };
+  const tPth = v('pth'), tVd = v('vitd'), tP = v('p'), tHb = v('hb');
+  if (dial) tpl.push(doseBullet);
+  else tpl.push([T(`Función renal con ${num(v('fg')) ? 'CKD_EPI' : 'FGe'} ${num(fg) ? f0(fg) : '—'}ml/min${num(pcr) ? `, con proteinuria ${fx(pcr / 1000, 1)}gr/gr` : num(acr) ? `, con albuminuria ${f0(acr)}mg/g` : ''}`), ...tail('renal'), ...(renalNote.length ? [T(' '), ...renalNote] : [])]);
+  {
+    const sents = [], issues = [], hv = num(v('hco3')) ? s('hco3') : f0(hco3);
+    if (num(K) || num(v('na'))) {
+      if (num(K) && K > 5.5) issues.push(`hiperpotasemia (K ${s('k')})`); else if (num(K) && K < 3.5) issues.push(`hipopotasemia (K ${s('k')})`);
+      if (num(v('na')) && v('na') < 135) issues.push(`hiponatremia (Na ${s('na')})`); else if (num(v('na')) && v('na') > 145) issues.push(`hipernatremia (Na ${s('na')})`);
+      if (num(v('mg')) && (low('mg') || v('mg') < 1.6)) issues.push(`hipomagnesemia (Mg ${s('mg')})`);
+      sents.push([T(issues.length ? `Control iónico con ${join(issues)}` : `Buen control iónico (${[num(K) && `K ${s('k')}`, num(v('na')) && `Na ${s('na')}`].filter(Boolean).join(' / ')} mmol/L)`)]);
+    }
+    if (num(hco3)) sents.push([T(hco3 < 22 ? `Acidosis metabólica (HCO3- ${hv})` : hco3 > 28 ? `Alcalosis metabólica (HCO3- ${hv})` : `Aceptable control de ácido-base (HCO3- ${hv})`)]);
+    else if (sents.length) sents.push([S('ácido-base sin datos en esta analítica')]);
+    push(joinSent(sents), 'ion');
+  }
+  if ([caCorr, tP, tPth, tVd].some(num)) {
+    const okCa = !num(caCorr) || (caCorr >= 8.4 && caCorr <= 10.2), okP = !num(tP) || (tP <= (dial ? 5.5 : 4.5) && tP >= (dial ? 3.5 : 2.5));
+    const okPth = !num(tPth) || (dial ? tPth >= 130 && tPth <= 600 : tPth <= 150), okVd = !num(tVd) || tVd >= 30;
+    push([T(okCa && okP && okPth && okVd ? 'Metabolismo Ca/P con buen control y aceptable manejo de vitD/HiperPTH secundario' : `Metabolismo Ca/P: ${capFacts}`)], 'cap');
+  }
+  if (num(tHb)) {
+    const esa = med('esa'), lo = dial ? 10 : 11, hi = dial ? 12 : 11.5;
+    const state = tHb < 10 ? 'Anemia mal controlada' : tHb < lo ? 'Límite control de anemia' : tHb > hi && esa ? 'Hb por encima de objetivo' : 'Buen control de anemia';
+    const iron = { low: ' con déficit férrico', high: ' con reservas de hierro altas', ok: ' con aceptable control férrico' }[ironState] || '';
+    push([T(`${state}${iron}${num(v('b12')) && num(v('fol')) && v('b12') >= 200 && v('fol') >= 3 ? ' sin déficit de fólico/vitB12' : ''}`)], 'anemia');
+  }
+  {
+    const sents = [], ldl = v('ldl'), tr = ['ast', 'alt'].filter(k => rec(k));
+    if (num(ldl) || num(v('chol'))) sents.push([T(`Perfil lipídico con ${!num(ldl) ? 'control no valorable (sin LDL)' : ldl <= 70 ? 'buen control' : ldl <= 100 ? 'aceptable control' : 'control insuficiente'}`)]);
+    if (tr.length) sents.push([T(tr.some(k => high(k)) ? `Transaminasas elevadas (${tr.map(k => `${k.toUpperCase()} ${s(k)}`).join(' / ')})` : 'Transaminasas en rango')]);
+    push(joinSent(sents), 'lip');
+  }
+  {
+    const sents = [], urato = v('urato'), albv = v('alb'), pcrp = v('pcr'), rh = refOf('urato')?.[2], lim = rh != null ? +rh : 7;
+    if (num(urato)) sents.push([T(urato <= lim ? 'Ac. úrico en rango' : `Ac. úrico ${urato <= lim + 1 ? 'ligeramente elevado' : 'elevado'} (${s('urato')})`)]);
+    if (num(albv) || num(pcrp)) {
+      const bad = [num(albv) && albv < 3.5 && `hipoalbuminemia (${s('alb')})`, num(pcrp) && pcrp > 5 && `PCR elevada (${s('pcr')})`].filter(Boolean);
+      sents.push([T(bad.length ? `Alteración de parámetros nutricionales/inflamatorios: ${join(bad)}` : num(albv) && num(pcrp) ? 'Aceptables parámetros nutricionales e inflamatorios' : num(albv) ? 'Aceptables parámetros nutricionales' : 'Aceptables parámetros inflamatorios')]);
+    }
+    if (num(v('hba1c'))) sents.push([T(`HbA1c ${s('hba1c')}%`)]);
+    push(joinSent(sents), 'misc');
+  }
+  if (hemoTxt) push([T(hemoTxt)], 'hemo');
+  {
+    const leu = rec('u_leu'), nit = rec('u_nit'), hem = rec('u_hem'), pos = r => r && !(/^(neg|normal|-|ausente)/i.test(r.valueStr) || r.num === 0);
+    if (leu || nit) {
+      const f = [pos(leu) && 'leucocituria', pos(nit) && 'nitritos positivos'].filter(Boolean);
+      if (f.length) { DD = []; dec('solicito sedimento y urocultivo', { why: 'DRAS alterado' }); tpl.push([T(`DRAS con ${join(f)}${pos(hem) ? ' y hematuria' : ''}`), T(' '), S(`${DD.join(' y ')}.`)]); }
+      else tpl.push([T(`DRAS sin datos de ITU${pos(hem) ? ', con hematuria' : ''}`)]);
+    }
+  }
 
   // 8. Reglas por fármaco (sólo si el fármaco está en el listado)
   if (dial) medNote('sglt2', 'Sin indicación de iSGLT2 en diálisis: valoro suspender');
@@ -234,7 +313,7 @@ export function analyze(ctx) {
     medNote('dpp4', 'Ajusto iDPP4 al FGe (alogliptina 12,5 mg si FGe 30-59 y 6,25 mg si <30; sitagliptina 50/25 mg; linagliptina sin ajuste)');
   }
   if (has('doac') && (!num(crClG) || crClG < 50)) medNote('doac', num(crClG) ? `CrCl (Cockcroft-Gault) ${f0(crClG)} mL/min: reviso dosis (edoxabán 30 mg si 15-50; rivaroxabán 15 mg si 15-49; dabigatrán contraindicado <30; apixabán 2,5 mg/12 h si ≥2 de edad ≥80, peso ≤60, Cr ≥1,5)` : 'Reviso dosis del anticoagulante oral directo según aclaramiento (Cockcroft-Gault)');
-  return { bullets, plan, adds, fg, K };
+  return { bullets, tbullets: tpl, plan, adds, fg, K };
 }
 
 // ---- Evolución (series, pendiente y gráficas)
@@ -265,12 +344,15 @@ export function evolution(all, { age, female, months = 24 }) {
 }
 
 // ---- Documento: líneas de segmentos
-const HEAD = /^\s*(an[aá]l[ií]sis|an[aá]l[ií]tica)\b/i;
+const HEAD = /^\s*(an[aá]l[ií]ticamente|an[aá]l[ií]sis|an[aá]l[ií]tica)\b/i;
+const TAIL_HEAD = /^\s*(comentario plan|medicaci[oó]n previa|medicaci[oó]n actualizada)\b/i;
 const BUL = /^\s*(\\?-|•|\*(?!\*)|--?>|\d+[.)])\s*/;
 const plainLine = l => l.replace(/\*\*/g, '');
+const TITLES = { erca: 'REVISION ERCA', general: 'REVISION NEFROLOGÍA', glom: 'REVISION GLOMERULARES', tx: 'REVISION TRASPLANTE', dp: 'REVISION DIÁLISIS PERITONEAL', hd: 'REVISION HEMODIÁLISIS', hdd: 'REVISION HEMODIÁLISIS DOMICILIARIA', guardia: '' };
+const B = t => ({ t, b: true });
 
 export function buildReview(inp) {
-  const { type, prev = '', medsText = '', bullet: bch = '- ' } = inp;
+  const { type, prev = '', medsText = '', bullet: bch = '- ', style = 'tpl' } = inp;
   const texts = inp.labTexts || [inp.labText || ''];
   const warnings = [];
   const sn = { ...sniffPatient(prev), ...sniffPatient(texts.join('\n')) };
@@ -283,13 +365,24 @@ export function buildReview(inp) {
   const res = analyze({ cur, all: cur.all, type, meds, age, female, kg, dm: inp.dm, session: inp.session });
   if (!age && !DIAL.has(type)) warnings.push('Sin edad: no se calculan FGe a partir de Cr ni reglas por edad (estatinas). Indica edad y sexo.');
 
-  const lines = prev ? prev.split(/\r?\n/) : [];
-  const h = lines.findIndex(l => HEAD.test(plainLine(l)));
-  const hdr = { t: `Analítica (${fmtDate(cur.date)}):`, b: h >= 0 && /\*\*/.test(lines[h]) };
-  const section = [[hdr], [], ...res.bullets.map(b => [T(bch), ...b])];
+  let lines = prev ? prev.split(/\r?\n/) : [];
+  const cut = lines.findIndex(l => TAIL_HEAD.test(plainLine(l)));
+  if (cut >= 0) lines = lines.slice(0, cut); // plan y medicación de la revisión anterior: se regeneran abajo
+  while (lines.length && !lines[lines.length - 1].trim()) lines.pop();
+  if (TITLES[type] && lines.length && lines[0].trim().length < 60 && /^\s*(\*\*)?\s*primera consulta\b/i.test(lines[0])) lines[0] = /^\s*\*\*/.test(lines[0]) ? `**${TITLES[type]}**` : TITLES[type];
+
+  let h = lines.findIndex(l => HEAD.test(plainLine(l)));
+  if (h < 0) {
+    h = lines.findIndex((l, i) => /anal[ií]tica/i.test(plainLine(l)) && BUL.test(plainLine(lines[i + 1] || '')));
+    if (h >= 0) warnings.push(`Sustituí desde la línea «${plainLine(lines[h]).slice(0, 60)}» hasta el final de sus viñetas.`);
+  }
+  const hdr = style === 'tpl' ? B('Analíticamente:') : { t: `Analítica (${fmtDate(cur.date)}):`, b: h >= 0 && /\*\*/.test(lines[h]) };
+  const section = [[hdr], ...(style === 'tpl' ? [] : [[]]), ...(style === 'tpl' ? res.tbullets : res.bullets).map(b => [T(bch), ...b])];
   let doc;
-  if (h < 0) { if (prev) warnings.push('No encontré una sección «Analítica/Análisis» en la revisión previa: la añado al final.'); doc = [...lines.map(parseInline), ...(prev ? [[]] : []), ...section]; }
-  else {
+  if (h < 0) {
+    if (prev) warnings.push('No encontré una sección «Analítica/Análisis» en la revisión previa: la añado al final.');
+    doc = [...(!prev && TITLES[type] ? [[B(TITLES[type])], []] : []), ...lines.map(parseInline), ...(lines.length ? [[]] : []), ...section];
+  } else {
     let e = h + 1;
     const nextNonBlank = i => lines.slice(i + 1).find(l => l.trim());
     while (e < lines.length && (BUL.test(plainLine(lines[e])) || (!lines[e].trim() && nextNonBlank(e) && BUL.test(plainLine(nextNonBlank(e)))))) e++;
@@ -298,8 +391,14 @@ export function buildReview(inp) {
   const medDoc = meds.map(m => [T(m.label), ...(m.notes.length ? [S(` → ${m.notes.join('; ')}`)] : [])]);
   res.adds.forEach(a => medDoc.push([S(`+ ${a}`)]));
   const planDoc = res.plan.map(p => [S(`- ${p}`)]);
+  // bloques finales de la plantilla: comentario del plan y medicación previa/actualizada
+  doc.push([], [B('Comentario plan')], ...(res.plan.length ? planDoc : [[T('[aquí añadir cambios de forma resumida]')]]));
+  if (meds.length) {
+    doc.push([], [B('Medicación previa:')], ...meds.map(m => [T(m.label)]), [], [B('Medicación actualizada:')],
+      ...meds.map(m => [T(`- ${m.label}`), ...(m.notes.length ? [S(` → ${m.notes.join('; ')}`)] : [])]), ...res.adds.map(a => [S(`- Añadir: ${a}`)]));
+  }
   const evo = evolution(cur.all, { age, female });
-  return { cur, date: cur.date, doc, section, medDoc, planDoc, evo, ordered: formatOrdered(cur), warnings, patient: { age, female, kg, cm }, res };
+  return { cur, date: cur.date, doc, section, medDoc, planDoc, evo, ordered: formatOrdered(cur, { extras: inp.extras }), warnings, patient: { age, female, kg, cm }, res };
 }
 
 // ---- Render

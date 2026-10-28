@@ -60,3 +60,54 @@ figure.chart svg { width: 100%; height: auto; display: block; }
 figure.chart .btn { margin-top: 6px; padding: 4px 10px; font-size: .8rem; }
 details.card > summary { cursor: pointer; font-weight: 600; font-family: var(--head); font-size: .92rem; }
 details.card[open] > summary { color: var(--burgundy); margin-bottom: 8px; }
+
+/* ---- Color por sección (paleta EPI-LAB sobre fondo blanco) */
+:root { --teal-t: #EAF4F7; --teal2-t: #E1EFF2; --burg-t: #F7EDEF; --char-t: #F2F2F2; --grey-d: #B9B9B9; --grey-t: #F8F8F8; }
+.top { border-top: 5px solid; border-image: linear-gradient(90deg, var(--teal) 0 34%, var(--burgundy) 34% 67%, var(--charcoal) 67%) 1; }
+.card.c-teal { border-top: 4px solid var(--teal); }
+.card.c-teal2 { border-top: 4px solid var(--teal-d); }
+.card.c-burg { border-top: 4px solid var(--burgundy); }
+.card.c-char { border-top: 4px solid var(--charcoal); }
+.card.c-grey { border-top: 4px solid var(--grey-d); }
+label.card.c-teal, details.c-teal > summary { color: var(--teal-d); }
+label.card.c-teal2, details.c-teal2 > summary { color: var(--teal-d); }
+label.card.c-burg, details.c-burg > summary { color: var(--burgundy); }
+label.card.c-char, details.c-char > summary { color: var(--charcoal); }
+label.card.c-grey { color: #777; }
+.c-teal textarea { background: var(--teal-t); border-color: var(--teal); }
+.c-teal2 textarea { background: var(--teal2-t); border-color: var(--teal-d); }
+.c-burg textarea { background: var(--burg-t); border-color: var(--burgundy); }
+.c-char textarea { background: var(--char-t); border-color: var(--charcoal); }
+.c-grey textarea { background: var(--grey-t); border-color: var(--grey-d); }
+details.card.c-teal[open] > summary, details.card.c-teal2[open] > summary, details.card.c-char[open] > summary { color: inherit; }
+#outTabs .tab[data-out=doc].on { color: var(--teal-d); border-bottom-color: var(--teal); }
+#outTabs .tab[data-out=ord].on { color: var(--burgundy); border-bottom-color: var(--burgundy); }
+#outTabs .tab[data-out=med].on { color: var(--charcoal); border-bottom-color: var(--charcoal); }
+#outTabs .tab[data-out=plan].on { color: var(--burgundy); border-bottom-color: var(--burgundy); }
+#outTabs .tab[data-out=evo].on { color: var(--teal-d); border-bottom-color: var(--teal-d); }
+#outBody { border-left: 5px solid var(--teal); }
+#outBody[data-view=ord] { border-left-color: var(--burgundy); background: var(--burg-t); }
+#outBody[data-view=med] { border-left-color: var(--charcoal); background: var(--char-t); }
+#outBody[data-view=plan] { border-left-color: var(--burgundy); background: var(--burg-t); }
+#outBody[data-view=evo] { border-left-color: var(--teal-d); background: var(--teal-t); }
+#outBody[data-view=doc] { background: #fff; }
+#copyRich, #iaCopyRich { background: var(--burgundy); border-color: var(--burgundy); color: #fff; }
+#copyRich:hover, #iaCopyRich:hover { background: #6f2430; }
+#copyPlain, #iaCopyPlain, #recCopy, #tplCopy, #exCopy { border-color: var(--teal-d); color: var(--teal-d); }
+#go { background: var(--burgundy); border-color: var(--burgundy); }
+#go:hover { background: #6f2430; }
+.tabs.sub .tab:nth-child(3n+1).on { color: var(--teal-d); border-bottom-color: var(--teal); }
+.tabs.sub .tab:nth-child(3n+2).on { color: var(--burgundy); border-bottom-color: var(--burgundy); }
+.tabs.sub .tab:nth-child(3n).on { color: var(--charcoal); border-bottom-color: var(--charcoal); }
+#outTabs .tab.on { /* los de resultados llevan su propio color */ }
+details.calc { border-left: 4px solid var(--teal); }
+details.calc:nth-child(3n+2) { border-left-color: var(--burgundy); }
+details.calc:nth-child(3n) { border-left-color: var(--charcoal); }
+details.calc[open] { background: #FCFEFE; }
+details#sessBox { border-top: 1px dashed var(--grey); padding-top: 4px; }
+details#sessBox > summary { color: var(--teal-d); }
+#tab-tpl textarea, #recText { width: 100%; font-size: 13px; }
+figure.chart { border-top: 3px solid var(--teal); }
+figure.chart:nth-child(even) { border-top-color: var(--burgundy); }
+.foot { color: var(--charcoal); }
+.gate-card { border-top: 5px solid var(--teal); }

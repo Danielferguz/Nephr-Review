@@ -24,7 +24,7 @@ export function parseEntry(s) {
     const clean = tok.replace('*', '');
     const num = parseFloat(clean.replace(',', '.').replace(/[<>+]/g, ''));
     const isNum = !clean.endsWith('+') && !/^[<>]/.test(clean);
-    return { name: r[1].trim(), value: isNum ? num : clean, num, valueStr: clean, flag: flag || bold, bold, unit: (r[3] || '').trim(), ref };
+    return { name: r[1].trim(), value: isNum ? num : clean, num: clean.endsWith('+') ? NaN : num, valueStr: clean, flag: flag || bold, bold, unit: (r[3] || '').trim(), ref };
   }
   r = s.match(WORDS);
   if (r && !/^No (procede|calculable)$/i.test(r[2])) return { name: r[1].trim(), value: r[2], num: NaN, valueStr: r[2], flag: bold, bold, unit: (r[3] || '').trim(), ref };
@@ -109,9 +109,9 @@ export const ANALYTES = [
   T('u24_pcr', 'uPCR 24h', '^uri\\(24h\\)-proteina\\/creatinina', 'Orina', 'mg/g'), T('u24_prot', 'Proteinuria 24h', '^uri\\(24h\\)-proteinas?$', 'Orina'),
   T('u_alb', 'Alb orina', '^uri.*-albumina$', 'Orina'), T('u_cr', 'Cr orina', '^uri.*-creatinina$', 'Orina'),
   T('u_na', 'Na orina', '^uri.*-sodio$', 'Orina'), T('u_k', 'K orina', '^uri.*-potasio$', 'Orina'), T('u_cl', 'Cl orina', '^uri.*-cloro$', 'Orina'),
-  T('u_dens', 'Densidad', '^uri.*-densidad', 'Orina'), T('u_ph', 'pH orina', '^uri.*-ph$', 'Orina'), T('u_prot', 'Proteínas', '^uri.*-proteinas?$', 'Orina'),
-  T('u_glu', 'Glucosa', '^uri.*-glucosa', 'Orina'), T('u_leu', 'Leucocitos', '^uri.*-leucocitos$', 'Orina'), T('u_nit', 'Nitritos', '^uri.*-nitritos', 'Orina'),
-  T('u_hem', 'Hematíes', '^uri.*-(?:eritrocitos|hematies)', 'Orina'),
+  T('u_dens', 'Densidad', '^uri.*-densidad', 'Orina'), T('u_ph', 'pH', '^uri.*-ph$', 'Orina'), T('u_prot', 'Proteínas', '^uri\\(mic\\)-proteina$', 'Orina'), T('u_prot_t', 'Proteínas (tira)', '^uri.*-proteinas$', 'Orina'),
+  T('u_glu', 'Glucosa', '^uri.*-glucosa', 'Orina'), T('u_ket', 'Cuerpos cetónicos', '^uri.*-cuerpos cetonicos', 'Orina'), T('u_bil', 'Bilirrubina', '^uri.*-bilirrubina$', 'Orina'), T('u_uro', 'Urobilinógeno', '^uri.*-urobilinogeno', 'Orina'),
+  T('u_nit', 'Nitritos', '^uri.*-nitritos', 'Orina'), T('u_hem', 'Eritrocitos', '^uri.*-(?:eritrocitos|hematies)$', 'Orina'), T('u_leu', 'Leucocitos', '^uri.*-leucocitos$', 'Orina'),
 ];
 export const BY_KEY = Object.fromEntries(ANALYTES.map(a => [a.key, a]));
 export function identify(name) { const n = norm(name); return ANALYTES.find(a => a.re.test(n)) || null; }
@@ -161,20 +161,62 @@ export function trendText(ser, n = 4) {
   return ser.slice(-n).map(p => `${p.str} (${fmtDate(p.date).slice(0, 5)}/${p.date.slice(2, 4)})`).join(' → ');
 }
 
-// ---- Salida ordenada
-const FLAG = r => (r.flag ? '*' : '');
-export function formatOrdered(cur) {
-  const lines = [`Analítica (${fmtDate(cur.date)}):`];
-  for (const g of GROUPS) {
-    const parts = ANALYTES.filter(a => a.group === g && cur.vals.has(a.key)).map(a => {
-      const r = cur.vals.get(a.key);
-      const late = r.date !== cur.date ? ` [${fmtDate(r.date).slice(0, 5)}]` : '';
-      return `${a.label} ${r.valueStr}${FLAG(r)}${a.unit && !/^[A-Za-z]/.test(r.valueStr) ? ' ' + a.unit : ''}${late}`;
-    });
-    if (parts.length) lines.push(`${g}: ${parts.join(', ')}`);
+// ---- Salida ordenada (formato HCIS): cada línea es una lista [clave, etiqueta, unidad, opciones]
+const thousands = n => (n >= 10000 ? String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, '.') : String(Math.round(n)));
+const QUAL = /^(negativo|normal|ausente)$/i;
+const MAIN = [
+  ['Hemograma', [
+    [['rbc', 'Hematíes', '/µL', { mul: 1e6, fmt: thousands, tight: 1 }], ['hb', 'Hb', 'g/dL'], ['hto', 'Hto', '%', { tight: 1 }], ['vcm', 'VCM', 'fL'], ['hcm', 'HCM', 'pg'], ['rdw', 'ADE', '%', { tight: 1 }]],
+    'WBC',
+    [['plt', 'Plaquetas', '/µL', { mul: 1e3, fmt: thousands, tight: 1 }]],
+  ]],
+  ['Iones', [[['na', 'Na+', 'mmol/L'], ['k', 'K+', 'mmol/L'], ['cl', 'Cl-', 'mmol/L'], ['ca', 'Calcio total', 'mg/dL'], ['caadj', 'Ca2+Alb', 'mg/dL'], ['caion', 'Ca2+ iónico', 'mmol/L'], ['p', 'Fosfato', 'mg/dL'], ['mg', 'Mg2+', 'mg/dL', { dec: 1 }]]]],
+  ['Gasometría', [[['ph', 'pH', ''], ['pco2', 'pCO2', 'mmHg'], ['po2', 'pO2', 'mmHg'], ['hco3', 'HCO3-', 'mmol/L'], ['be', 'EB', 'mmol/L'], ['lac', 'Lactato', 'mmol/L']]]],
+  ['Bioquímica', [
+    [['glu', 'Glucemia', 'mg/dL'], ['cr', 'Creatinina', 'mg/dL'], ['fg', 'Filtrado', 'mL/min'], ['urea', 'Urea', 'mg/dL']],
+    [['urato', 'Urato', 'mg/dL'], ['chol', 'Colesterol total', 'mg/dL'], ['hdl', 'HDL', 'mg/dL'], ['tg', 'TG', 'mg/dL']],
+    [['ferr', 'Ferritina', 'ng/mL'], ['trf', 'Transferrina', 'mg/dL'], ['tibc', 'CTTH', 'µg/dL'], ['fe', 'Hierro', 'µg/dL'], ['tsat', 'IST', '%', { tight: 1 }]],
+    [['alt', 'ALAT', 'UI/L'], ['ast', 'ASAT', 'UI/L'], ['ggt', 'GGT', 'UI/L'], ['fa', 'FAlc', 'UI/L'], ['bil', 'BRT', 'mg/dL']],
+    [['pcr', 'PCR', 'mg/L']],
+    [['pth', 'PTHi', 'pg/mL']],
+    [['pt', 'Proteínas', 'g/dL'], ['alb', 'Albúmina', 'g/dL'], ['vitd', 'Vitamina D (25-OH)', 'ng/mL']],
+    [['hba1c', 'HbA1c', '%', { tight: 1 }], ['tsh', 'TSH', 'µUI/mL'], ['b12', 'Vitamina B12', 'pg/mL'], ['fol', 'Ácido fólico', 'ng/mL'], ['psa', 'PSA', 'ng/mL']],
+  ]],
+];
+const URINE = [['u_dens', 'Densidad', ''], ['u_ph', 'pH', ''], ['u_glu', 'Glucosa', ''], ['u_ket', 'Cuerpos cetónicos', ''], ['u_bil', 'Bilirrubina', ''], ['u_uro', 'Urobilinógeno', ''], ['u_prot', 'Proteínas', 'mg/dL'],
+  ['u_nit', 'Nitritos', ''], ['u_hem', 'Eritrocitos', ''], ['u_leu', 'Leucocitos', ''], ['u_cr', 'Creatinina', 'mg/dL'], ['u_pcr', 'Prot/Cr', 'mg/gCr'], ['u_alb', 'Albúmina', 'mg/dL'], ['u_acr', 'Alb/Cr', 'mg/gCr']];
+
+const cell = (r, o = {}) => {
+  if (!r) return null;
+  if (!Number.isFinite(r.num)) return QUAL.test(r.valueStr) ? '-' : /^[<>]/.test(r.valueStr) ? r.valueStr : r.valueStr;
+  const v = o.mul ? r.num * o.mul : r.num;
+  return o.fmt ? o.fmt(v) : o.dec != null ? String(+v.toFixed(o.dec)) : /^[<>]/.test(r.valueStr) ? r.valueStr : String(parseFloat(r.valueStr));
+};
+const item = (vals, [k, label, unit, o = {}]) => { const c = cell(vals.get(k), o); return c == null ? null : `${label} ${c}${unit ? (o.tight ? '' : ' ') + unit : ''}`; };
+const wbcLine = vals => {
+  const w = vals.get('wbc'); if (!w) return null;
+  const ab = k => (vals.get(k) ? Math.round(vals.get(k).num * 1000) : null);
+  const [n, l, m, e, b] = ['neu', 'lin', 'mon', 'eos', 'bas'].map(ab);
+  const diff = [n != null && `N ${n}`, l != null && `L ${l}`, m != null && `M ${m}`, e != null && `E ${e}`, b != null && `B ${b}`, n != null && l ? `N/L ${(n / l).toFixed(2)}` : false].filter(Boolean);
+  return `Leucocitos ${thousands(w.num * 1000)}/µL${diff.length ? ` [${diff.join(', ')}]` : ''}`;
+};
+
+export function formatOrdered(cur, { extras = false } = {}) {
+  const lines = [`Analítica ${fmtDate(cur.date)}`], used = new Set();
+  for (const [title, rows] of MAIN) {
+    const out = rows.map(row => (row === 'WBC' ? (['wbc', 'neu', 'lin', 'mon', 'eos', 'bas'].forEach(k => used.add(k)), wbcLine(cur.vals)) : (row.forEach(([k]) => used.add(k)), row.map(it => item(cur.vals, it)).filter(Boolean).join(', ')))).filter(Boolean);
+    out.forEach((txt, i) => lines.push(i === 0 ? `- ${title}: ${txt}` : `    ${txt}`));
   }
-  if (cur.others.length) lines.push(`Otros: ${cur.others.map(r => `${r.name.replace(/^[A-Za-z/()0-9]+-/, '')} ${r.valueStr}${FLAG(r)}${r.unit ? ' ' + r.unit : ''}`).join(', ')}`);
-  lines.push('(* = fuera de rango del laboratorio)');
+  const u = URINE.map(([k, label, unit]) => { used.add(k); return item(cur.vals, [k, label, unit]); }).filter(Boolean);
+  if (u.length) {
+    const rec = cur.vals.get('u_cr') || cur.vals.get('u_pcr') || cur.vals.get('u_acr') || cur.vals.get('u_dens');
+    lines.push('', `Orina ${fmtDate(rec?.date || cur.date)}${rec?.time ? `, ${rec.time.slice(0, 5)}` : ''}: ${u.join(', ')}`);
+  }
+  if (extras) {
+    const rest = [...cur.vals].filter(([k]) => !used.has(k)).map(([k, r]) => `${BY_KEY[k].label} ${cell(r)}${BY_KEY[k].unit ? ' ' + BY_KEY[k].unit : ''}`)
+      .concat(cur.others.map(r => `${r.name.replace(/^[A-Za-z/()0-9]+-/, '')} ${r.valueStr}${r.unit ? ' ' + r.unit : ''}`));
+    if (rest.length) lines.push('', `Otros: ${rest.join(', ')}`);
+  }
   return lines.join('\n');
 }
 

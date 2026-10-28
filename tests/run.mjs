@@ -45,7 +45,21 @@ t('current/series/slope', () => {
   assert.equal(cur.vals.get('k').num, 5.8);
   const s = L.series(cur.all, 'cr'); assert.equal(s.length, 4);
   assert.ok(L.slope(s).perYear > 0);
-  assert.match(L.formatOrdered(cur), /Función renal: Cr 2\.80\*, FGe 24\* mL\/min/);
+  assert.match(L.formatOrdered(cur), /Bioquímica: .*Creatinina 2\.8 mg\/dL, Filtrado 24 mL\/min/);
+});
+t('formatOrdered: formato HCIS (datos sintéticos)', () => {
+  const lab = '03/11/2026 08:15:30: San-Hematíes *3.85 x10e6/µL (3.9 - 5.1), San-Hemoglobina *11.2 g/dL, San-Hematocrito 36.1, San-Volumen corpuscular medio (VCM) 90.2 fL, San-Índice de distribución eritrocitaria (RDW) *14.9 %, San-Plaquetas 244 x10e3/µL, San-Leucocitos 8.10 x10e3/µL, San-Neutrófilos 5.60 x10e3/µL, San-Linfocitos 1.80 x10e3/µL, San-Monocitos 0.50 x10e3/µL, San-Eosinófilos 0.15 x10e3/µL, San-Basófilos 0.05 x10e3/µL, Srm/Pla-Creatinina *1.95 mg/dL, Filtrado glomerular (CKD-EPI) *27 mL/min/1.73m2, Srm/Pla-Sodio 140 mmol/L, Srm/Pla-Potasio 4.2 mmol/L, Srm/Pla-Magnesio 1.84 mg/dL, Colesterol LDL calculado (Friedewald) 90 mg/dL, Uri(mic)-Creatinina 70.0 mg/dL, Uri(mic)-Densidad 1.018, Uri(mic)-Glucosa Negativo, Uri(mic)-Urobilinógeno Normal, Uri(mic)-Glucosa *1+, Uri(mic)-Proteína/creatinina (mg/g) *150.2 mg/g crea';
+  const out = L.formatOrdered(L.current(L.parseLab(lab)));
+  assert.equal(out, [
+    'Analítica 03/11/2026',
+    '- Hemograma: Hematíes 3.850.000/µL, Hb 11.2 g/dL, Hto 36.1%, VCM 90.2 fL, ADE 14.9%',
+    '    Leucocitos 8100/µL [N 5600, L 1800, M 500, E 150, B 50, N/L 3.11]',
+    '    Plaquetas 244.000/µL',
+    '- Iones: Na+ 140 mmol/L, K+ 4.2 mmol/L, Mg2+ 1.8 mg/dL',
+    '- Bioquímica: Creatinina 1.95 mg/dL, Filtrado 27 mL/min',
+    '',
+    'Orina 03/11/2026, 08:15: Densidad 1.018, Glucosa 1+, Urobilinógeno -, Creatinina 70 mg/dL, Prot/Cr 150.2 mg/gCr'].join('\n'));
+  assert.match(L.formatOrdered(L.current(L.parseLab(lab)), { extras: true }), /\nOtros: .*LDL 90/);
 });
 t('sniffPatient', () => assert.deepEqual(L.sniffPatient('Varón de 57 años en HD. Peso: 63 kg Altura: 175 cm'), { female: false, age: 57, weight: 63, height: 175 }));
 
@@ -101,12 +115,12 @@ t('parseMeds: línea del HCE, marca → principio activo y posología', () => {
 t('parseMeds: fecha de inicio sólo anotada en fármacos que alteran FGe/CrS', () => {
   const [a, b, c] = parseMeds('Forxiga 10 mg 1-0-0 desde 30/06/2026\nTivicay 50 mg 1-0-0\nAdiro 100 mg 1-0-0');
   assert.equal(a.label, 'dapagliflozina 10 mg en desayuno (inicio 30/06/2026)'); assert.ok(a.hemo);
-  assert.equal(b.label, 'dolutegravir 50 mg en desayuno (inicio no consta)'); assert.ok(b.secr);
+  assert.equal(b.label, 'dolutegravir 50 mg en desayuno'); assert.ok(b.secr);
   assert.equal(c.label, 'ácido acetilsalicílico 100 mg en desayuno');
 });
 t('parseMeds: pauta expandida por toma', () => {
   assert.equal(parseMeds('Bicarbonato Sodico 1 G 0-2-2')[0].label, 'bicarbonato sódico 2 g en comida y 2 g en cena');
-  assert.equal(parseMeds('Enalapril 20 mg 1-0-1')[0].label, 'enalapril 20 mg en desayuno y 20 mg en cena (inicio no consta)');
+  assert.equal(parseMeds('Enalapril 20 mg 1-0-1')[0].label, 'enalapril 20 mg en desayuno y 20 mg en cena');
   assert.equal(parseMeds('ALOPURINOL NORMON 100 MG 100 COMPRIMIDOS, 100 MG ORAL 07/06/2018 CRONICA 2 Desayuno')[0].label, 'alopurinol 200 mg en desayuno');
   assert.equal(parseMeds('Karvezide 300mg/12,5mg 1-0-0')[0].label.includes('1-0-0'), true); // combinación: se deja como está
   assert.equal(parseMeds('Aranesp 40 mcg cada 15 días')[0].label, 'darbepoetina alfa 40 mcg cada 15 días');
@@ -131,7 +145,7 @@ const EVOX = 'Srm/Pla-Creatinina\n*3.70 mg/dL\n10-06-2026 10:00\nFiltrado glomer
 const MEDX = 'LOKELMA 5 G 28 SOBRES, 5 G ORAL 01/06/2026 CRONICA 1 Desayuno\nBICARBONATO SODICO 1 G 0-2-2\nMIMPARA 30 MG 28 COMPRIMIDOS, ORAL 15/06/2026 CRONICA 1 Cena\nRENVELA 800 MG 1-1-1\nADENURIC 80 mg 1-0-0';
 const PREV = '**REVISIÓN ERCA**\n\nVarón de 72 años con ERC.\n\nAnalítica (04/07/2026):\n\n- Función renal estable.\n- resto aceptable.\n\nPruebas complementarias: ecocardiograma pendiente.\n\nPLAN\n\n--> Revisión en 3 meses.';
 t('buildReview ERCA: no necesita analítica de hoy y escribe en el estilo del clínico', () => {
-  const r = buildReview({ type: 'erca', prev: PREV, labTexts: [LABX, EVOX, ''], medsText: MEDX });
+  const r = buildReview({ type: 'erca', prev: PREV, labTexts: [LABX, EVOX, ''], medsText: MEDX, style: 'det' });
   const plain = toPlain(r.doc);
   assert.equal(r.date, '2026-09-14');
   assert.ok(plain.includes('Analítica (14/09/2026):') && !plain.includes('04/07/2026'));
@@ -155,7 +169,7 @@ t('buildReview ERCA: no necesita analítica de hoy y escribe en el estilo del cl
 t('buildReview: fármaco que altera el FGe, con fecha de inicio entre determinaciones', () => {
   const evo = 'Srm/Pla-Creatinina\n*2.00 mg/dL\n10-06-2026 10:00\nFiltrado glomerular (CKD-EPI)\n*30 mL/min/1.73m2\n10-06-2026 10:00';
   const lab = '14/09/2026 10:30:00: Srm/Pla-Creatinina *2.60 mg/dL, Filtrado glomerular (CKD-EPI) *22 mL/min/1.73m2, Srm/Pla-Potasio 4.8 mmol/L, Srm/Pla-Sodio 140 mmol/L';
-  const r = buildReview({ type: 'erca', prev: '', labTexts: [lab, evo, ''], medsText: 'Forxiga 10 mg 1-0-0 desde 30/06/2026\nTivicay 50 mg 1-0-0 desde 01/09/2026' });
+  const r = buildReview({ type: 'erca', prev: '', labTexts: [lab, evo, ''], medsText: 'Forxiga 10 mg 1-0-0 desde 30/06/2026\nTivicay 50 mg 1-0-0 desde 01/09/2026', style: 'det' });
   const plain = toPlain(r.doc);
   assert.match(plain, /\[\[Inicio de dapagliflozina el 30\/06\/2026: posible descenso hemodinámico del FGe\.\]\]/);
   assert.match(plain, /\[\[Inicio de dolutegravir el 01\/09\/2026: inhibe la secreción tubular de creatinina/);
@@ -170,6 +184,36 @@ t('buildReview HD: Kt/V y sin FGe', () => {
 t('buildReview: marcas sin diccionario se avisan', () => {
   const r = buildReview({ type: 'erca', prev: '', labText: LABX, medsText: 'FOOBAR 10 mg\nForxiga 10 mg' });
   assert.match(r.warnings.join(' '), /sin equivalente.*FOOBAR/);
+});
+
+
+// ---- Plantilla HCIS («Analíticamente:») con datos sintéticos
+const TPL_LAB = '03/11/2026 08:00:00: San-Hemoglobina *10.6 g/dL (12 - 14.7), Srm/Pla-Creatinina *2.60 mg/dL, Filtrado glomerular (CKD-EPI) *24 mL/min/1.73m2, Srm/Pla-Urea *90 mg/dL, Srm/Pla-Urato 6.1 mg/dL (2.3 - 6.6), Srm/Pla-Sodio 139 mmol/L, Srm/Pla-Potasio 4.0 mmol/L, Srm/Pla-Magnesio 2.1 mg/dL (1.6 - 2.6), Colesterol LDL calculado (Friedewald) 85 mg/dL, Srm/Pla-Calcio total 9.4 mg/dL, Calcio ajustado por albúmina 9.3 mg/dL, Srm/Pla-Fosfato 3.8 mg/dL, Srm-Paratohormona (PTH) intacta 60.0 (18.5 - 88), Srm-Vitamina D (calcidiol) 38 ng/mL, Srm/Pla-Albúmina 4.4 g/dL, Srm/Pla-Aspartato aminotransferasa (AST) 20 UI/L ( - 40), Srm/Pla-Alanina aminotransferasa (ALT) 18 ( - 35), Srm/Pla-Proteína C reactiva 2.0 mg/L ( - 5), Srm-Hierro 70 µg/dL, Srm/Pla-Ferritina 200 ng/mL, Srm-Índice de saturación de la transferrina 22 %, Uri(mic)-Proteína/creatinina (mg/g) *310.0 mg/g crea, Uri(mic)-Leucocitos Negativo, Uri(mic)-Nitritos Negativo, Uri(mic)-Eritrocitos Negativo';
+const TPL_PREV = 'PRIMERA CONSULTA ERCA\n\nMujer de 80 años con ERC y vasculitis ANCA.\n\nNo se ha realizado analítica desde mayo. Hacemos gasometría en consulta\n-Funcion renal Cr 2.4 mg/dl\n-Hb 11.6g/dl con aranesp\n\nPruebas complementarias: al día.\n\nTRS: explicado.';
+t('plantilla HCIS: título, «Analíticamente:», frases cualitativas y bloques finales', () => {
+  const r = buildReview({ type: 'erca', prev: TPL_PREV, labText: TPL_LAB, medsText: 'ARANESP 10 mg cada 21 días\nNUSTENDI (bempedoico/ezetrol) 1 comp en cena\nRITUXIMAB 500mg --> según UMPI' });
+  const p = toPlain(r.doc);
+  assert.ok(p.startsWith('REVISION ERCA\n'));
+  assert.ok(!p.includes('**') && p.includes('Analíticamente:\n- Función renal con CKD_EPI 24ml/min, con proteinuria 0.3gr/gr [[valoro IECA/ARA-II a dosis baja'));
+  assert.match(p, /- Buen control iónico \(K 4 \/ Na 139 mmol\/L\)\. \[\[ácido-base sin datos en esta analítica\]\]\n/);
+  assert.match(p, /- Metabolismo Ca\/P con buen control y aceptable manejo de vitD\/HiperPTH secundario\n/);
+  assert.match(p, /- Límite control de anemia con aceptable control férrico \[\[ajustamos darbepoetina alfa \(aumento ~25 %\)\.\]\]\n/);
+  assert.match(p, /- Perfil lipídico con aceptable control\. Transaminasas en rango\n/);
+  assert.match(p, /- Ac\. úrico en rango\. Aceptables parámetros nutricionales e inflamatorios\n/);
+  assert.match(p, /- DRAS sin datos de ITU\n/);
+  assert.ok(!p.includes('No se ha realizado analítica') && p.includes('Pruebas complementarias: al día.'));
+  assert.match(p, /\nComentario plan\n\[\[- Valoro IECA[^\n]*\n\[\[- Ajustamos darbepoetina alfa/);
+  assert.match(p, /\nMedicación previa:\ndarbepoetina alfa 10 mg cada 21 días\nácido bempedoico\/ezetimiba 1 comp en cena\nrituximab 500mg --> según UMPI\n/);
+  assert.match(p, /\nMedicación actualizada:\n- darbepoetina alfa 10 mg cada 21 días \[\[→ Ajustamos/);
+  assert.ok(!/estatina/.test(p), 'Nustendi cuenta como hipolipemiante: no se propone estatina');
+  assert.match(r.warnings.join(' '), /Sustituí desde la línea/);
+});
+t('plantilla HCIS: regenerar sobre la salida anterior no duplica bloques', () => {
+  const r1 = buildReview({ type: 'erca', prev: TPL_PREV, labText: TPL_LAB, medsText: 'ARANESP 10 mg cada 21 días' });
+  const r2 = buildReview({ type: 'erca', prev: toPlain(r1.doc), labText: TPL_LAB, medsText: 'ARANESP 10 mg cada 21 días' });
+  const p = toPlain(r2.doc);
+  for (const h of ['Analíticamente:', 'Comentario plan', 'Medicación previa:', 'Medicación actualizada:']) assert.equal(p.split(h).length - 1, 1, h);
+  assert.deepEqual(r2.warnings, []);
 });
 
 // ---- Gráfica, anonimizador e IA

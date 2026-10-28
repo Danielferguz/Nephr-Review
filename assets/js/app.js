@@ -8,6 +8,7 @@ import { chartSvg, copyChartPng } from './chart.js';
 import { anonymize } from './anon.js';
 import { buildRequest, askClaude, MODELS } from './ia.js';
 import { enableBoldPaste } from './paste.js';
+import { TEMPLATES } from './templates.js';
 
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -26,6 +27,7 @@ $('loginForm').addEventListener('submit', async e => {
 });
 function wipe() {
   document.querySelectorAll('#tab-rev textarea, #tab-rev input, #tab-risk input, #tab-calc input').forEach(el => { if (el.type === 'checkbox') el.checked = el.id === 'iaAnon' || el.id === 'exAnon'; else { el.value = ''; delete el.dataset.touched; } });
+  renderRec();
   $('sex').value = ''; $('out').hidden = true; $('msgs').textContent = ''; $('detect').textContent = ''; $('iaOut').hidden = $('iaActs').hidden = true; $('iaMsg').textContent = '';
   $('exDl').disabled = $('exCopy').disabled = true; iaDoc = null; last = null; det = null;
   document.querySelectorAll('.res-host').forEach(h => { h.innerHTML = ''; });
@@ -41,7 +43,7 @@ function tabs(nav, attr, cb) {
     cb(b.dataset[attr]);
   });
 }
-tabs($('nav'), 'tab', t => ['rev', 'risk', 'calc'].forEach(k => { $('tab-' + k).hidden = k !== t; }));
+tabs($('nav'), 'tab', t => ['rev', 'risk', 'calc', 'tpl'].forEach(k => { $('tab-' + k).hidden = k !== t; }));
 
 // ---- Portapapeles
 const flash = m => { $('msgs').textContent = m; setTimeout(() => { if ($('msgs').textContent === m) $('msgs').textContent = ''; }, 2500); };
@@ -93,6 +95,7 @@ function current() {
 function renderOut() {
   const c = current(); if (!c) return;
   $('outBody').innerHTML = c.shown || '<span class="muted">Sin contenido.</span>';
+  $('outBody').dataset.view = view;
 }
 $('outBody').addEventListener('click', e => {
   const b = e.target.closest('[data-copy]'); if (!b) return;
@@ -106,7 +109,7 @@ $('copyPlain').onclick = () => { const c = current(); c && copyText(c.plain); };
 $('go').onclick = () => {
   const sexv = $('sex').value, t = num($('s_t')), w = num($('s_w'));
   const r = buildReview({
-    type: $('type').value, prev: $('prev').value, labTexts: labTexts(), medsText: $('meds').value, bullet: $('bullet').value,
+    type: $('type').value, prev: $('prev').value, labTexts: labTexts(), medsText: $('meds').value, bullet: $('bullet').value, style: $('style').value, extras: $('extras').checked,
     age: num($('age')), female: sexv ? sexv === 'f' : undefined, kg: num($('kg')), cm: num($('cm')), dm: $('dm').checked,
     defaultDate: today(), session: t && w ? { t, w, uf: num($('s_uf')), n: num($('s_n')), acc: $('s_acc').value } : undefined,
   });
@@ -122,6 +125,32 @@ $('go').onclick = () => {
   renderOut();
   detect();
 };
+
+
+// ---- Recomendaciones generales (según consulta) y biblioteca de plantillas
+const MES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+const longDate = iso => { const [y, m, d] = iso.split('-'); return `${+d} de ${MES[+m - 1]} de ${y}`; };
+const REC = TEMPLATES.filter(t => t.group === 'Recomendaciones');
+REC.forEach(t => $('recSel').append(new Option(t.title, t.id)));
+function renderRec(auto) {
+  if (auto) $('recSel').value = ['dp', 'hd', 'hdd'].includes($('type').value) ? 'rec-domiciliaria' : 'rec-erca';
+  let i = 0;
+  const an = $('recAn').value && longDate($('recAn').value), rev = $('recRev').value && longDate($('recRev').value), hora = $('recHora').value;
+  $('recText').value = REC.find(t => t.id === $('recSel').value).text
+    .replace(/día … de … de 2026/g, m => { i++; const d = i === 1 ? an : rev; return d ? `día ${d}` : m; })
+    .replace(/a las … horas/, hora ? `a las ${hora} horas` : 'a las … horas');
+}
+['recSel', 'recAn', 'recRev', 'recHora'].forEach(id => $(id).addEventListener('input', () => renderRec()));
+$('type').addEventListener('change', () => renderRec(true));
+$('recCopy').onclick = () => copyText($('recText').value);
+renderRec(true);
+
+[...new Set(TEMPLATES.map(t => t.group))].forEach(g => $('tplGroup').append(new Option(g, g)));
+function fillTpl() { $('tplSel').innerHTML = ''; TEMPLATES.filter(t => t.group === $('tplGroup').value).forEach(t => $('tplSel').append(new Option(t.title, t.id))); showTpl(); }
+function showTpl() { $('tplText').value = TEMPLATES.find(t => t.id === $('tplSel').value)?.text || ''; }
+$('tplGroup').addEventListener('change', fillTpl); $('tplSel').addEventListener('change', showTpl);
+$('tplCopy').onclick = () => copyText($('tplText').value);
+fillTpl();
 
 // ---- Guardar ejemplo (descarga local; nada se envía)
 const exampleText = () => {

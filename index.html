@@ -28,6 +28,7 @@
       <button class="tab on" data-tab="rev">Revisión</button>
       <button class="tab" data-tab="risk">Riesgo</button>
       <button class="tab" data-tab="calc">Calculadoras</button>
+      <button class="tab" data-tab="tpl">Plantillas</button>
     </nav>
     <span class="grow"></span>
     <button id="wipe" class="btn ghost" title="Vacía todos los campos">Borrar todo</button>
@@ -36,15 +37,17 @@
 
   <main class="wrap">
     <section id="tab-rev">
-      <div class="card">
+      <div class="card c-teal">
         <div class="row">
           <label>Consulta <select id="type"></select></label>
           <label>Edad <input id="age" type="number" min="0" max="120" inputmode="numeric"></label>
           <label>Sexo <select id="sex"><option value="">auto</option><option value="m">Varón</option><option value="f">Mujer</option></select></label>
           <label>Peso (kg) <input id="kg" type="number" step="any" inputmode="decimal"></label>
           <label>Talla (cm) <input id="cm" type="number" step="any" inputmode="decimal"></label>
+          <label>Estilo del comentario <select id="style"><option value="tpl">Plantilla HCIS (Analíticamente)</option><option value="det">Detallado con valores (Analítica fecha)</option></select></label>
           <label>Viñeta <select id="bullet"><option value="- ">-</option><option value="* ">*</option></select></label>
           <label class="chk"><input id="dm" type="checkbox"> Diabetes</label>
+          <label class="chk"><input id="extras" type="checkbox"> Incluir el resto de parámetros en la analítica ordenada</label>
         </div>
         <details id="sessBox" class="mt">
           <summary>Sesión de hemodiálisis (para Kt/V, opcional)</summary>
@@ -59,25 +62,25 @@
       </div>
 
       <div class="grid3">
-        <label class="card">1. Revisión previa
+        <label class="card c-teal">1. Revisión previa
           <textarea id="prev" rows="12" spellcheck="false" placeholder="Pega aquí la revisión anterior completa (se conserva la negrita)…"></textarea>
         </label>
-        <label class="card">2. Última analítica del sistema
+        <label class="card c-burg">2. Última analítica del sistema
           <textarea id="lab" rows="12" spellcheck="false" placeholder="Pega la última analítica (línea con fecha del HCE). No hace falta que sea de hoy…"></textarea>
         </label>
-        <label class="card">3. Tratamiento actual
+        <label class="card c-char">3. Tratamiento actual
           <textarea id="meds" rows="12" spellcheck="false" placeholder="Un fármaco por línea o separados por «;». Se sustituye la marca por el principio activo…"></textarea>
         </label>
-        <label class="card">4. Evolución de CrS, FGe y proteinuria
+        <label class="card c-teal2">4. Evolución de CrS, FGe y proteinuria
           <textarea id="evo" rows="7" spellcheck="false" placeholder="Pega las rejillas de evolución (nombre, valor, fecha)…"></textarea>
         </label>
-        <label class="card">5. Otra analítica o evolución (opcional)
+        <label class="card c-grey">5. Otra analítica o evolución (opcional)
           <textarea id="other" rows="7" spellcheck="false" placeholder="Analíticas previas u otras series (K, Hb, PTH…)…"></textarea>
         </label>
       </div>
       <p><button id="go" class="btn primary">Generar</button> <span id="detect" class="muted small" role="status"></span> <span id="msgs" class="muted" role="status"></span></p>
 
-      <div id="out" class="card" hidden>
+      <div id="out" class="card c-burg" hidden>
         <nav id="outTabs" class="tabs sub" aria-label="Resultados">
           <button class="tab on" data-out="doc">Revisión actualizada</button>
           <button class="tab" data-out="ord">Analítica ordenada</button>
@@ -93,7 +96,19 @@
         <p class="muted small">Las propuestas en <span class="sug">rojo y negrita</span> las generan reglas fijas y debe validarlas el clínico. Texto plano: las propuestas van entre [[ ]].</p>
       </div>
 
-      <details id="iaBox" class="card">
+      <details id="recBox" class="card c-teal" open>
+        <summary>Recomendaciones generales y citas (plantilla del HCIS)</summary>
+        <div class="row">
+          <label>Plantilla <select id="recSel"></select></label>
+          <label>Analítica el día <input id="recAn" type="date"></label>
+          <label>Revisión el día <input id="recRev" type="date"></label>
+          <label>Hora <input id="recHora" type="time"></label>
+        </div>
+        <textarea id="recText" rows="12" spellcheck="false"></textarea>
+        <p><button id="recCopy" class="btn">Copiar texto</button></p>
+      </details>
+
+      <details id="iaBox" class="card c-teal2">
         <summary>IA (opcional): pedir a Claude que revise y redacte</summary>
         <p class="muted small">Envía la revisión previa, la analítica, el tratamiento y el borrador a la API de Anthropic usando <b>tu propia clave</b> (solo se guarda en memoria hasta cerrar la pestaña). Los datos salen del navegador: anonimiza y comprueba que tu centro lo permite.</p>
         <div class="row">
@@ -110,13 +125,24 @@
         <div id="iaOut" class="doc" hidden></div>
       </details>
 
-      <details id="exBox" class="card">
+      <details id="exBox" class="card c-char">
         <summary>Guardar un ejemplo para enviármelo</summary>
         <p class="muted small">Reúne lo pegado y lo generado en un archivo de texto que puedes adjuntar en el chat desde cualquier ordenador. No se envía nada automáticamente. Revisa la vista previa: la anonimización es básica y no sustituye tu revisión.</p>
         <label class="chk"><input id="exAnon" type="checkbox" checked> Anonimizar nombres, fechas de nacimiento y números largos</label>
         <textarea id="exText" rows="10" spellcheck="false" readonly></textarea>
         <p><button id="exMake" class="btn">Preparar ejemplo</button> <button id="exDl" class="btn primary" disabled>Descargar .txt</button> <button id="exCopy" class="btn" disabled>Copiar</button></p>
       </details>
+    </section>
+
+    <section id="tab-tpl" hidden>
+      <div class="card c-teal">
+        <div class="row">
+          <label>Grupo <select id="tplGroup"></select></label>
+          <label>Plantilla <select id="tplSel"></select></label>
+        </div>
+        <textarea id="tplText" rows="22" spellcheck="false"></textarea>
+        <p><button id="tplCopy" class="btn">Copiar texto</button> <span class="muted small">Edita los huecos («…») antes de copiar.</span></p>
+      </div>
     </section>
 
     <section id="tab-risk" hidden>

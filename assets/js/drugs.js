@@ -23,17 +23,19 @@ export const DRUGS = [
   D('vildagliptina/metformina', ['eucreas'], ['dpp4', 'metf']), D('glimepirida', ['amaryl'], ['sulf']), D('gliclazida', ['diamicron'], ['sulf']), D('glibenclamida', ['daonil'], ['sulf']), D('repaglinida', [], []),
   // Lípidos
   D('atorvastatina', ['zarator', 'prevencor', 'lipitor', 'sortis'], ['statin']), D('rosuvastatina', ['crestor'], ['statin']), D('simvastatina', ['zocor'], ['statin']), D('pravastatina', [], ['statin']), D('pitavastatina', ['livazo'], ['statin']),
-  D('ezetimiba', ['ezetrol'], ['eze']), D('atorvastatina/ezetimiba', ['atozet'], ['statin', 'eze']),
+  D('ezetimiba', ['ezetrol'], ['eze', 'lipid']), D('atorvastatina/ezetimiba', ['atozet'], ['statin', 'eze', 'lipid']), D('ácido bempedoico/ezetimiba', ['nustendi'], ['lipid']), D('ácido bempedoico', ['nilemdo'], ['lipid']),
   // Anticoagulación y antiagregación
   D('edoxabán', ['lixiana'], ['doac']), D('apixabán', ['eliquis'], ['doac']), D('rivaroxabán', ['xarelto'], ['doac']), D('dabigatrán', ['pradaxa'], ['doac']), D('acenocumarol', ['sintrom'], []),
   D('enoxaparina', ['clexane'], []), D('ácido acetilsalicílico', ['adiro', 'aspirina'], []),
   // Metabolismo mineral, anemia, K
   D('calcifediol', ['hidroferol'], ['vitd']), D('colecalciferol', ['deltius', 'vigantol'], ['vitd']), D('calcitriol', ['rocaltrol'], ['vitda']), D('paricalcitol', ['zemplar'], ['vitda']), D('cinacalcet', ['mimpara'], ['calcim']), D('etelcalcetida', ['parsabiv'], ['calcim']),
-  D('sevelamer', ['renvela', 'renagel'], ['pbind']), D('carbonato de lantano', ['fosrenol', 'lantano'], ['pbind']), D('carbonato cálcico', ['mastical', 'mastical d'], ['pbind']), D('oxihidróxido sucroférrico', ['velphoro'], ['pbind']),
+  D('sevelamer', ['renvela', 'renagel'], ['pbind']), D('carbonato de lantano', ['fosrenol', 'lantano'], ['pbind']), D('carbonato cálcico', ['mastical'], ['pbind']), D('carbonato cálcico/colecalciferol', ['mastical d'], ['pbind', 'vitd']), D('oxihidróxido sucroférrico', ['velphoro'], ['pbind']),
   D('darbepoetina alfa', ['aranesp'], ['esa']), D('metoxi-polietilenglicol epoetina beta', ['mircera'], ['esa']), D('epoetina', ['eporatin', 'binocrit', 'retacrit', 'neorecormon'], ['esa']),
   D('carboximaltosa férrica', ['ferinject'], ['iron']), D('sulfato ferroso', ['tardyferon', 'ferogradumet', 'fero-gradumet'], ['iron']), D('hierro oral', ['ferbisol'], ['iron']),
   D('ciclosilicato de sodio y zirconio', ['lokelma'], ['kbind']), D('patiromer', ['veltassa'], ['kbind']), D('bicarbonato sódico', ['bicarbonato sodico'], ['bicarb']), D('magnesio', ['magnogene'], ['mg']),
   D('alopurinol', ['zyloric'], ['allo']), D('febuxostat', ['adenuric'], ['allo']),
+  // Vasculitis e inmunosupresión
+  D('rituximab', ['mabthera', 'truxima', 'rixathon', 'ruxience'], []), D('avacopán', ['tavneos'], []), D('ciclofosfamida', ['genoxal'], []), D('micofenolato', ['cellcept', 'myfortic'], []), D('tacrolimus', ['prograf', 'advagraf'], []), D('azatioprina', ['imurel'], []),
   // Otros frecuentes
   D('omeprazol', [], ['ppi']), D('pantoprazol', [], ['ppi']), D('esomeprazol', ['nexium'], ['ppi']), D('lansoprazol', [], ['ppi']), D('famotidina', [], []),
   D('gabapentina', ['neurontin'], ['gaba']), D('pregabalina', ['lyrica'], ['gaba']), D('amlodipino', [], []), D('manidipino', ['artedil'], []), D('lercanidipino', ['lercadip'], []), D('bisoprolol', [], []), D('carvedilol', [], []), D('atenolol', [], []),
@@ -51,7 +53,7 @@ export function findDrug(raw) {
   const n = norm(raw);
   for (const d of DRUGS) for (const name of d.names) {
     const m = re(name).exec(n);
-    if (m) return { d, start: m.index + m[1].length, end: m.index + m[1].length + name.length };
+    if (m) return { d, name, start: m.index + m[1].length, end: m.index + m[1].length + name.length };
   }
   return null;
 }
@@ -78,17 +80,18 @@ export function dailyDose(raw) {
 // "1 g 0-2-2" o "6,25 mg … 1 Desayuno,1 Cena" -> "2 g en comida y 2 g en cena". null si no se puede repartir la dosis.
 const SLOTS = ['desayuno', 'comida', 'cena', 'al acostarse'];
 const slotName = w => ({ almuerzo: 'comida', acostarse: 'al acostarse' }[w.toLowerCase()] || w.toLowerCase());
+const at = slot => (slot === 'al acostarse' ? slot : `en ${slot}`);
 const joinEs = a => (a.length > 1 ? `${a.slice(0, -1).join(', ')} y ${a[a.length - 1]}` : a[0] || '');
 function expandPosology(label, tail, inn) {
   if (inn?.includes('/')) return null; // combinaciones: cada componente tiene su dosis
   const p = label.match(/(\d+(?:[.,]\d+)?)\s*(mg|g|mcg|µg|ui)\s+(\d+(?:[.,]\d+)?)\s*-\s*(\d+(?:[.,]\d+)?)\s*-\s*(\d+(?:[.,]\d+)?)(?:\s*-\s*(\d+(?:[.,]\d+)?))?/i);
   if (p) {
-    const items = p.slice(3).filter(x => x !== undefined).map((c, i) => (num(c) > 0 ? `${fmtN(num(p[1]) * num(c))} ${p[2].toLowerCase()} en ${SLOTS[i]}` : null)).filter(Boolean);
+    const items = p.slice(3).filter(x => x !== undefined).map((c, i) => (num(c) > 0 ? `${fmtN(num(p[1]) * num(c))} ${p[2].toLowerCase()} ${at(SLOTS[i])}` : null)).filter(Boolean);
     return items.length ? label.slice(0, p.index) + joinEs(items) + label.slice(p.index + p[0].length) : null;
   }
   const d = label.match(/(\d+(?:[.,]\d+)?)\s*(mg|g|mcg|µg|ui)\b/i), t = [...tail.matchAll(/(\d+(?:[.,]\d+)?)\s+(desayuno|almuerzo|comida|merienda|cena|acostarse)/gi)];
   if (!d || !t.length) return null;
-  const items = t.map(x => `${fmtN(num(d[1]) * num(x[1]))} ${d[2].toLowerCase()} en ${slotName(x[2])}`);
+  const items = t.map(x => `${fmtN(num(d[1]) * num(x[1]))} ${d[2].toLowerCase()} ${at(slotName(x[2]))}`);
   return label.slice(0, d.index) + joinEs(items) + label.slice(d.index + d[0].length);
 }
 
@@ -96,11 +99,12 @@ export function parseMeds(text) {
   return text.split(/\r?\n|;/).map(l => l.trim()).filter(Boolean).map(raw => {
     const tail = raw.match(/CRONICA\s+(.*)$/i);
     let label = raw.replace(/^(?:f[aá]rmacos|tratamiento|medicaci[oó]n)[^:]{0,20}:\s*/i, '').split(/,\s/)[0]
-      .replace(/\s+\d+\s+(comprimidos?|capsulas?|sobres?|ampollas?|comp)\b.*$/i, '').trim();
+      .replace(/\s+\d+\s+(comprimidos?|capsulas?|sobres?|ampollas?|comp)\.?$/i, '').trim(); // sólo el nº de envase al final («28 COMPRIMIDOS»), no «1 comp en cena»
     if (label === label.toUpperCase()) label = label.toLowerCase();
     const hit = findDrug(label);
     if (hit) {
-      const after = label.slice(hit.end).replace(MAKER_RE, '');
+      let after = label.slice(hit.end).replace(MAKER_RE, '');
+      if (hit.name !== norm(hit.d.inn)) after = after.replace(/^\s*\([^)]*\)/, ''); // marca: se descarta el paréntesis explicativo («(bempedoico/ezetrol)»)
       label = (label.slice(0, hit.start) + hit.d.inn + after).trim();
     }
     const start = hit ? startDate(raw) : null;
@@ -110,7 +114,7 @@ export function parseMeds(text) {
     if (ex) label = ex;
     return {
       raw, inn: hit?.d.inn || null, classes: hit?.d.cls || [], hemo: !!hit?.d.hemo, secr: !!hit?.d.secr, start, dose: dailyDose(raw), notes: [], unknown: !hit,
-      label: label + (tail && !ex ? ` — ${tail[1].trim()}` : '') + (flagged ? ` (inicio ${start ? fmtDate(start) : 'no consta'})` : ''),
+      label: label + (tail && !ex ? ` — ${tail[1].trim()}` : '') + (flagged && start ? ` (inicio ${fmtDate(start)})` : ''),
     };
   });
 }
