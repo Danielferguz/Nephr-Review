@@ -7,7 +7,7 @@ Página estática (HTML + CSS + JS sin build ni dependencias) para actualizar re
 ## Qué hace
 - **Revisión**: pegas cinco cuadros (revisión previa, **última analítica del sistema**, tratamiento, evolución de CrS/FGe/proteinuria y otra analítica). No hace falta analítica «de hoy»: se usa la fecha de la última que pegues. La **negrita** del HCE se conserva al pegar. Devuelve:
   - la revisión con la sección *Analítica (fecha)* sustituida y comentada en tu estilo, con las **decisiones propuestas en rojo y negrita**; el resto queda igual;
-  - *Analítica ordenada* por grupos, *Medicación propuesta* (principio activo en lugar de marca, dosis diaria y fecha de inicio de los fármacos que alteran el FGe o la CrS), *Plan sugerido* y *Evolución y gráficas* (SVG con tendencia, copiables como imagen);
+  - *Analítica ordenada* por grupos, *Medicación propuesta* (principio activo en lugar de marca, pauta expandida por toma —«2 g en comida y 2 g en cena»—, dosis diaria en los comentarios y fecha de inicio de los fármacos que alteran el FGe o la CrS), *Plan sugerido* y *Evolución y gráficas* (SVG con tendencia, copiables como imagen);
   - copiar con formato (rojo + negrita) o en texto plano (propuestas entre `[[ ]]`).
 - **Detección automática**: lo pegado se analiza en vivo y rellena los campos de las calculadoras y de KFRE/Mayo/SCORE2 (edad y sexo incluidos).
 - **Riesgo**: KFRE (4/8 variables, 2 y 5 años), ADPKD (clase de Mayo y proyección de FGe) y SCORE2/SCORE2-OP con estatinas (KDIGO + objetivos ESC).

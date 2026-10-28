@@ -74,6 +74,24 @@ export function dailyDose(raw) {
   return d && tomas ? `${fmtN(num(d[1]) * tomas)} ${d[2].toLowerCase()}/día` : '';
 }
 
+
+// "1 g 0-2-2" o "6,25 mg … 1 Desayuno,1 Cena" -> "2 g en comida y 2 g en cena". null si no se puede repartir la dosis.
+const SLOTS = ['desayuno', 'comida', 'cena', 'al acostarse'];
+const slotName = w => ({ almuerzo: 'comida', acostarse: 'al acostarse' }[w.toLowerCase()] || w.toLowerCase());
+const joinEs = a => (a.length > 1 ? `${a.slice(0, -1).join(', ')} y ${a[a.length - 1]}` : a[0] || '');
+function expandPosology(label, tail, inn) {
+  if (inn?.includes('/')) return null; // combinaciones: cada componente tiene su dosis
+  const p = label.match(/(\d+(?:[.,]\d+)?)\s*(mg|g|mcg|µg|ui)\s+(\d+(?:[.,]\d+)?)\s*-\s*(\d+(?:[.,]\d+)?)\s*-\s*(\d+(?:[.,]\d+)?)(?:\s*-\s*(\d+(?:[.,]\d+)?))?/i);
+  if (p) {
+    const items = p.slice(3).filter(x => x !== undefined).map((c, i) => (num(c) > 0 ? `${fmtN(num(p[1]) * num(c))} ${p[2].toLowerCase()} en ${SLOTS[i]}` : null)).filter(Boolean);
+    return items.length ? label.slice(0, p.index) + joinEs(items) + label.slice(p.index + p[0].length) : null;
+  }
+  const d = label.match(/(\d+(?:[.,]\d+)?)\s*(mg|g|mcg|µg|ui)\b/i), t = [...tail.matchAll(/(\d+(?:[.,]\d+)?)\s+(desayuno|almuerzo|comida|merienda|cena|acostarse)/gi)];
+  if (!d || !t.length) return null;
+  const items = t.map(x => `${fmtN(num(d[1]) * num(x[1]))} ${d[2].toLowerCase()} en ${slotName(x[2])}`);
+  return label.slice(0, d.index) + joinEs(items) + label.slice(d.index + d[0].length);
+}
+
 export function parseMeds(text) {
   return text.split(/\r?\n|;/).map(l => l.trim()).filter(Boolean).map(raw => {
     const tail = raw.match(/CRONICA\s+(.*)$/i);
@@ -88,9 +106,11 @@ export function parseMeds(text) {
     const start = hit ? startDate(raw) : null;
     const flagged = hit && (hit.d.hemo || hit.d.secr);
     if (flagged) label = label.replace(/\s*(?:desde|inicio|iniciad[oa])\s*(?:el\s*)?\d{1,2}\/\d{1,2}\/\d{2,4}/i, '');
+    const ex = expandPosology(label, tail ? tail[1] : '', hit?.d.inn);
+    if (ex) label = ex;
     return {
       raw, inn: hit?.d.inn || null, classes: hit?.d.cls || [], hemo: !!hit?.d.hemo, secr: !!hit?.d.secr, start, dose: dailyDose(raw), notes: [], unknown: !hit,
-      label: label + (tail ? ` — ${tail[1].trim()}` : '') + (flagged ? ` (inicio ${start ? fmtDate(start) : 'no consta'})` : ''),
+      label: label + (tail && !ex ? ` — ${tail[1].trim()}` : '') + (flagged ? ` (inicio ${start ? fmtDate(start) : 'no consta'})` : ''),
     };
   });
 }

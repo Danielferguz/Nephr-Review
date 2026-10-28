@@ -93,16 +93,23 @@ t('mayoRows y kfreRows', () => {
 // ---- Fármacos
 t('parseMeds: línea del HCE, marca → principio activo y posología', () => {
   const [m] = parseMeds('CARVEDILOL 6,25 MG 28 COMPRIMIDOS, 6,25 MG ORAL COMPRIMIDOS 29/07/2026 CRONICA 1 Desayuno,1 Cena');
-  assert.equal(m.label, 'carvedilol 6,25 mg — 1 Desayuno,1 Cena');
+  assert.equal(m.label, 'carvedilol 6,25 mg en desayuno y 6,25 mg en cena');
   const k = parseMeds('KARVEZIDE 300MG/12,5MG 28 COMP, 28 COMPRIMIDO ORAL 20/02/2009 CRONICA 1 Desayuno')[0];
   assert.equal(k.inn, 'irbesartán/hidroclorotiazida'); assert.ok(k.classes.includes('raas') && k.classes.includes('diur'));
-  assert.equal(parseMeds('ALOPURINOL MUNDOGEN 100 MG 100 COMPRIMIDOS, 100 MG ORAL 07/06/2018 CRONICA 2 Desayuno')[0].label.startsWith('alopurinol 100 mg'), true);
+  assert.equal(parseMeds('ALOPURINOL MUNDOGEN 100 MG 100 COMPRIMIDOS, 100 MG ORAL 07/06/2018 CRONICA 2 Desayuno')[0].label, 'alopurinol 200 mg en desayuno');
 });
 t('parseMeds: fecha de inicio sólo anotada en fármacos que alteran FGe/CrS', () => {
   const [a, b, c] = parseMeds('Forxiga 10 mg 1-0-0 desde 30/06/2026\nTivicay 50 mg 1-0-0\nAdiro 100 mg 1-0-0');
-  assert.equal(a.label, 'dapagliflozina 10 mg 1-0-0 (inicio 30/06/2026)'); assert.ok(a.hemo);
-  assert.equal(b.label, 'dolutegravir 50 mg 1-0-0 (inicio no consta)'); assert.ok(b.secr);
-  assert.equal(c.label, 'ácido acetilsalicílico 100 mg 1-0-0');
+  assert.equal(a.label, 'dapagliflozina 10 mg en desayuno (inicio 30/06/2026)'); assert.ok(a.hemo);
+  assert.equal(b.label, 'dolutegravir 50 mg en desayuno (inicio no consta)'); assert.ok(b.secr);
+  assert.equal(c.label, 'ácido acetilsalicílico 100 mg en desayuno');
+});
+t('parseMeds: pauta expandida por toma', () => {
+  assert.equal(parseMeds('Bicarbonato Sodico 1 G 0-2-2')[0].label, 'bicarbonato sódico 2 g en comida y 2 g en cena');
+  assert.equal(parseMeds('Enalapril 20 mg 1-0-1')[0].label, 'enalapril 20 mg en desayuno y 20 mg en cena (inicio no consta)');
+  assert.equal(parseMeds('ALOPURINOL NORMON 100 MG 100 COMPRIMIDOS, 100 MG ORAL 07/06/2018 CRONICA 2 Desayuno')[0].label, 'alopurinol 200 mg en desayuno');
+  assert.equal(parseMeds('Karvezide 300mg/12,5mg 1-0-0')[0].label.includes('1-0-0'), true); // combinación: se deja como está
+  assert.equal(parseMeds('Aranesp 40 mcg cada 15 días')[0].label, 'darbepoetina alfa 40 mcg cada 15 días');
 });
 t('parseMeds: dosis diaria y desconocidos', () => {
   assert.equal(parseMeds('Bicarbonato Sodico 1 G 0-2-2')[0].dose, '4 g/día');
@@ -141,8 +148,8 @@ t('buildReview ERCA: no necesita analítica de hoy y escribe en el estilo del cl
   assert.ok(!/  \[\[/.test(plain), 'sin doble espacio antes de [[');
   const html = toHtml(r.doc, true);
   assert.ok(html.includes('<b style="color:#C00000">') && html.includes('<b>REVISIÓN ERCA</b>'));
-  assert.match(toPlain(r.medDoc), /^ciclosilicato de sodio y zirconio 5 g — 1 Desayuno$/m);
-  assert.match(toPlain(r.medDoc), /cinacalcet 30 mg — 1 Cena \[\[→ Aumento cinacalcet/);
+  assert.match(toPlain(r.medDoc), /^ciclosilicato de sodio y zirconio 5 g en desayuno$/m);
+  assert.match(toPlain(r.medDoc), /cinacalcet 30 mg en cena \[\[→ Aumento cinacalcet/);
   assert.ok(r.evo.charts.length >= 3);
 });
 t('buildReview: fármaco que altera el FGe, con fecha de inicio entre determinaciones', () => {
