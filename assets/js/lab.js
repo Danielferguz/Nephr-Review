@@ -12,7 +12,8 @@ const NUM = /^(.*?)\s+(\*?\s?[<>]?\d+(?:[.,]\d+)?\+?)(?:\s+(.*))?$/;
 
 // "Srm/Pla-Potasio *5.5 mmol/L (3.5 - 5.1)" -> {name, value, valueStr, flag, unit, ref}
 export function parseEntry(s) {
-  s = s.trim().replace(/\s+/g, ' ');
+  const bold = /\*\*/.test(s); // negrita del HCE (marcada con ** al pegar) = valor destacado
+  s = s.replace(/\*\*/g, '').trim().replace(/\s+/g, ' ');
   let ref = null;
   const m = s.match(/\s\(([\d.,<>\s-]*)\)$/);
   if (m && /\d/.test(m[1])) { ref = m[1].trim(); s = s.slice(0, m.index); }
@@ -23,10 +24,10 @@ export function parseEntry(s) {
     const clean = tok.replace('*', '');
     const num = parseFloat(clean.replace(',', '.').replace(/[<>+]/g, ''));
     const isNum = !clean.endsWith('+') && !/^[<>]/.test(clean);
-    return { name: r[1].trim(), value: isNum ? num : clean, num, valueStr: clean, flag, unit: (r[3] || '').trim(), ref };
+    return { name: r[1].trim(), value: isNum ? num : clean, num, valueStr: clean, flag: flag || bold, bold, unit: (r[3] || '').trim(), ref };
   }
   r = s.match(WORDS);
-  if (r && !/^No (procede|calculable)$/i.test(r[2])) return { name: r[1].trim(), value: r[2], num: NaN, valueStr: r[2], flag: false, unit: (r[3] || '').trim(), ref };
+  if (r && !/^No (procede|calculable)$/i.test(r[2])) return { name: r[1].trim(), value: r[2], num: NaN, valueStr: r[2], flag: bold, bold, unit: (r[3] || '').trim(), ref };
   return null; // p. ej. "Pendiente mg/dL (provisional)"
 }
 
@@ -40,8 +41,9 @@ export function parseLab(text) {
   const recs = [];
   const push = (e, d, y, mo, tm) => { const r = parseEntry(e); if (r) recs.push({ ...r, date: y ? isoDate(d, mo, y) : null, time: tm || '' }); };
   let pend = [];
+  const AROUND_DATE = /^\*\*(\s*\d{1,2}[\/-]\d{1,2}[\/-]\d{4}(?:[ T]+\d{1,2}:\d{2}(?::\d{2})?)?\s*:?)\*\*/;
   for (const raw of text.replace(/\\([*_\\-])/g, '$1').split(/\r?\n/)) {
-    const line = raw.trim();
+    const line = raw.trim().replace(AROUND_DATE, '$1');
     if (!line) continue;
     const a = line.match(LINE_DATE);
     if (a) { a[5].split(ENTRY_SPLIT).forEach(e => push(e, a[1], a[3], a[2], a[4])); pend = []; continue; }
@@ -51,14 +53,17 @@ export function parseLab(text) {
       const di = f.findIndex(x => /^\d{1,2}[\/-]\d{1,2}[\/-]\d{4}/.test(x));
       if (di >= 2) { const d = f[di].match(ONLY_DATE) || f[di].match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})/); push(`${f[0]} ${f[1]}`, d[1], d[3], d[2], d[4]); pend = []; continue; }
     }
-    const d = line.match(ONLY_DATE);
+    const d = line.replace(/\*\*/g, '').match(ONLY_DATE);
     if (d) { if (pend.length >= 2) push(`${pend[pend.length - 2]} ${pend[pend.length - 1]}`, d[1], d[3], d[2], d[4]); pend = []; continue; }
-    if (/^(descripci[oó]n|valor|fecha|hora)$/i.test(line) || /^\d{1,2}:\d{2}(:\d{2})?$/.test(line)) continue;
+    if (/^(descripci[oó]n|valor|fecha|hora)$/i.test(line.replace(/\*\*/g, '')) || /^\d{1,2}:\d{2}(:\d{2})?$/.test(line)) continue;
     pend.push(line);
     if (pend.length > 3) pend.shift();
   }
   return recs;
 }
+
+// Une varias celdas de pegado (analítica, evolución, otra) en un único conjunto de registros.
+export const collect = texts => texts.flatMap(t => parseLab(t || ''));
 
 // ---- Catálogo de analitos: [clave, etiqueta, regex sobre nombre normalizado, grupo, unidad a mostrar]
 const B = '(?:srm\\/pla|srm|pla)';
@@ -71,16 +76,19 @@ export const ANALYTES = [
   T('rdw', 'RDW', '^san-indice de distribucion eritrocitaria', 'Hemograma'), T('plt', 'Plaquetas', '^san-plaquetas$', 'Hemograma'),
   T('wbc', 'Leucocitos', '^san-leucocitos$', 'Hemograma'), T('neu', 'Neutrófilos', '^san-neutrofilos$', 'Hemograma'),
   T('lin', 'Linfocitos', '^san-linfocitos$', 'Hemograma'), T('mon', 'Monocitos', '^san-monocitos$', 'Hemograma'),
-  T('eos', 'Eosinófilos', '^san-eosinofilos$', 'Hemograma'), T('bas', 'Basófilos', '^san-basofilos$', 'Hemograma'), T('retic', 'Reticulocitos', '^san-reticulocitos', 'Hemograma'),
+  T('eos', 'Eosinófilos', '^san-eosinofilos$', 'Hemograma'), T('bas', 'Basófilos', '^san-basofilos$', 'Hemograma'), T('retic', 'Reticulocitos %', '^san-reticulocitos \\(%\\)', 'Hemograma'), T('retic_abs', 'Reticulocitos', '^san-reticulocitos$', 'Hemograma'),
+  T('neu_p', 'Neutrófilos %', '^san-neutrofilos \\(%\\)', 'Hemograma'), T('lin_p', 'Linfocitos %', '^san-linfocitos \\(%\\)', 'Hemograma'),
+  T('mon_p', 'Monocitos %', '^san-monocitos \\(%\\)', 'Hemograma'), T('eos_p', 'Eosinófilos %', '^san-eosinofilos \\(%\\)', 'Hemograma'), T('bas_p', 'Basófilos %', '^san-basofilos \\(%\\)', 'Hemograma'),
+  T('vpm', 'VPM', '^san-volumen plaquetar medio', 'Hemograma'),
   T('cr', 'Cr', `^${B}-creatinina$`, 'Función renal'), T('fg', 'FGe', '^filtrado glomerular(?!.*cistatina)', 'Función renal', 'mL/min'),
   T('fgcys', 'FGe cistatina', '^filtrado glomerular.*cistatina', 'Función renal', 'mL/min'), T('cysc', 'Cistatina C', 'cistatina c', 'Función renal'),
   T('urea', 'Urea', `^${B}-urea$`, 'Función renal'), T('urea_post', 'Urea post', '^srm-urea ktv2', 'Función renal'),
   T('na', 'Na', `^${B}-sodio$`, 'Iones'), T('k', 'K', `^${B}-potasio$`, 'Iones'), T('cl', 'Cl', `^${B}-cloro$`, 'Iones'), T('mg', 'Mg', `^${B}-magnesio$`, 'Iones'),
   T('ph', 'pH', '^san-ph$', 'Gasometría'), T('pco2', 'pCO2', '^san-pco2$', 'Gasometría'), T('po2', 'pO2', '^san-po2$', 'Gasometría'),
-  T('hco3', 'HCO3', '^san-bicarbonato$', 'Gasometría'), T('hco3s', 'HCO3 est', '^san-bicarbonato estandar', 'Gasometría'),
+  T('tco2', 'CO2 total', '^san-concentracion total de co2', 'Gasometría'), T('hco3', 'HCO3', '^san-bicarbonato$', 'Gasometría'), T('hco3s', 'HCO3 est', '^san-bicarbonato estandar', 'Gasometría'),
   T('be', 'EB', '^san-exceso de bases$', 'Gasometría'), T('lac', 'Lactato', '^san-lactato$', 'Gasometría'),
   T('ag', 'Anión gap', '^san-anion gap', 'Gasometría'), T('caion', 'Ca2+', '^san-calcio ionizado$', 'Metabolismo Ca/P'),
-  T('ca', 'Ca', `^${B}-calcio total$`, 'Metabolismo Ca/P'), T('p', 'P', `^${B}-fosfato$`, 'Metabolismo Ca/P'),
+  T('ca', 'Ca', `^${B}-calcio total$`, 'Metabolismo Ca/P'), T('caadj', 'Ca ajustado', '^calcio ajustado por albumina', 'Metabolismo Ca/P'), T('p', 'P', `^${B}-fosfato$`, 'Metabolismo Ca/P'),
   T('pth', 'PTH', 'paratohormona|\\(pth\\)', 'Metabolismo Ca/P'), T('vitd', '25-OH-D', 'calcidiol', 'Metabolismo Ca/P'),
   T('fa', 'FA', 'fosfatasa alcalina', 'Metabolismo Ca/P'),
   T('fe', 'Fe', '^srm-hierro$', 'Hierro y anemia'), T('ferr', 'Ferritina', '-ferritina$', 'Hierro y anemia'),
@@ -111,7 +119,7 @@ export function identify(name) { const n = norm(name); return ANALYTES.find(a =>
 export function annotate(recs) { return recs.map(r => ({ ...r, key: identify(r.name)?.key || null })); }
 
 // Valores vigentes: último registro de cada analito dentro de `windowDays` de la fecha más reciente.
-export function current(recs, defaultDate, windowDays = 14) {
+export function current(recs, defaultDate, windowDays = 21) {
   const rs = annotate(recs).map(r => ({ ...r, date: r.date || defaultDate || null }));
   const dated = rs.filter(r => r.date);
   const last = dated.length ? dated.map(r => r.date).sort().pop() : null;
@@ -133,16 +141,20 @@ export function series(all, key) {
   return [...byDay.values()].sort((a, b) => a.date.localeCompare(b.date)).map(r => ({ date: r.date, value: r.num, str: r.valueStr }));
 }
 
-// Pendiente por regresión lineal (unidades/año). Exige >=3 puntos y >=90 días de seguimiento.
-export function slope(ser) {
+// Regresión lineal sobre el tiempo en años. Exige >=3 puntos y >=90 días de seguimiento.
+export function regress(ser) {
   if (ser.length < 3) return null;
   const t = ser.map(p => Date.parse(p.date) / (365.25 * DAY)), y = ser.map(p => p.value);
   const span = t[t.length - 1] - t[0];
   if (span < 90 / 365.25) return null;
   const n = ser.length, mt = t.reduce((a, b) => a + b) / n, my = y.reduce((a, b) => a + b) / n;
   const sxx = t.reduce((a, x) => a + (x - mt) ** 2, 0), sxy = t.reduce((a, x, i) => a + (x - mt) * (y[i] - my), 0);
-  const perYear = sxy / sxx, last = y[n - 1];
-  return { perYear, n, spanYears: span, last, at5: Math.max(0, last + perYear * 5) };
+  const perYear = sxy / sxx;
+  return { perYear, intercept: my - perYear * mt, n, spanYears: span, last: y[n - 1], at: yrs => y[n - 1] + perYear * yrs };
+}
+export function slope(ser) {
+  const r = regress(ser);
+  return r && { perYear: r.perYear, n: r.n, spanYears: r.spanYears, last: r.last, at5: Math.max(0, r.last + r.perYear * 5) };
 }
 
 export function trendText(ser, n = 4) {
